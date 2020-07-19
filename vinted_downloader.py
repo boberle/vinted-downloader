@@ -8,6 +8,7 @@ import argparse
 from urllib.parse import urlparse
 import urllib.request
 import urllib
+from selenium import webdriver
 
 from bs4 import BeautifulSoup
 
@@ -48,6 +49,35 @@ def get_profile_picture_url(soup):
             print(f"Found user profile picture at '{image_url}'.")
         # no break to check if only one
     return image_url
+
+def ask_to_save_seller_page_and_picture(url, dpath):
+    seller_dom = os.path.abspath(os.path.join(dpath, 'seller_dom.html'))
+    print(f"Go to {url} and save the DOM to {seller_dom}")
+    seller_photo = os.path.abspath(os.path.join(dpath, 'profile.jpg'))
+    print(f"Also, save the picture, if any, to {seller_photo}")
+    input("Press Enter when done.")
+
+
+def get_seller_dom_and_picture_url(url, dpath):
+    # dom
+    driver = webdriver.Firefox(executable_path="/tmp/geckodriver")
+    driver.get(url)
+    html = driver.execute_script("return document.body.outerHTML;")
+    with open(os.path.join(dpath, 'seller_dom.html'), "w") as f:
+        f.write(html)
+    driver.close()
+    # image
+    soup = BeautifulSoup(html, "lxml")
+    image_url = None
+    for img in soup.find_all('img'):
+        if 'f800' not in img['src']:
+            continue
+        assert image_url is None # only one
+        image_url = img['src']
+        print(f"Found user profile picture at '{image_url}'.")
+        # no break to check if only one
+    return image_url
+
 
 
 
@@ -101,8 +131,9 @@ def download_and_save(url, outdpath):
     save(seller_page, dpath, 'seller.html', binary=False)
 
     # seller profile picture
-    soup = BeautifulSoup(seller_page, "lxml")
-    profile_picture_url = get_profile_picture_url(soup)
+    #soup = BeautifulSoup(seller_page, "lxml")
+    #profile_picture_url = get_profile_picture_url(soup)
+    profile_picture_url = get_seller_dom_and_picture_url(seller_url, dpath)
     if profile_picture_url is not None:
         open(os.path.join(dpath, 'profile_picture_url'), 'w').write(
             profile_picture_url)
