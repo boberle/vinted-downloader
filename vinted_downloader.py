@@ -62,6 +62,7 @@ def get_seller_dom_and_picture_url(url, dpath):
     # dom
     driver = webdriver.Firefox(executable_path="/tmp/geckodriver")
     driver.get(url)
+    time.sleep(2)
     html = driver.execute_script("return document.body.outerHTML;")
     with open(os.path.join(dpath, 'seller_dom.html'), "w") as f:
         f.write(html)
@@ -70,12 +71,14 @@ def get_seller_dom_and_picture_url(url, dpath):
     soup = BeautifulSoup(html, "lxml")
     image_url = None
     for img in soup.find_all('img'):
-        if 'f800' not in img['src']:
+        if '/f800/' not in img['src']:
             continue
         assert image_url is None # only one
         image_url = img['src']
         print(f"Found user profile picture at '{image_url}'.")
         # no break to check if only one
+    if not image_url:
+        raise RuntimeError("User profile picture not found")
     return image_url
 
 
@@ -111,6 +114,15 @@ def download_and_save(url, outdpath):
         print("Found an image at '%s'" % image_url)
         image_urls.append(image_url)
 
+    # some supplementary images (only the first 5 are shown on the main
+    # page) are in a "u-hidden" div (there are several of this kind of div, we
+    # want the one with the 'item-description' figures)
+    for u_hidden_div in soup.find_all("div", class_="u-hidden"):
+        for figure in u_hidden_div.find_all('figure', class_="item-description"):
+            image_url = figure.a['href']
+            print("Found a supplementary image at '%s'" % image_url)
+            image_urls.append(image_url)
+
     assert image_urls
 
     open(os.path.join(dpath, 'image_urls'), 'w').write("\n".join(image_urls))
@@ -120,7 +132,14 @@ def download_and_save(url, outdpath):
         save(image_data, dpath, f"image_{i}.jpg", binary=True)
 
     # seller url
-    seller_url = soup.find('span', class_="user-login-name").a['href']
+    #seller_url = soup.find('span', class_="user-login-name").a['href']
+    seller_id = soup.find(
+        'script',
+        attrs={'data-component-name':"ItemUserInfo"},
+    ).string;
+    assert seller_id
+    seller_id = json.loads(seller_id)['user']['id']
+    seller_url = f"/members/{seller_id}"
     seller_url = f"{parsed.scheme}://{parsed.netloc}{seller_url}"
     #input(seller_url)
 
