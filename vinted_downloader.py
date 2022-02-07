@@ -9,6 +9,7 @@ from urllib.parse import urlparse
 import urllib.request
 import urllib
 from selenium import webdriver
+from selenium.webdriver.firefox.service import Service
 
 from bs4 import BeautifulSoup
 
@@ -60,7 +61,9 @@ def ask_to_save_seller_page_and_picture(url, dpath):
 
 def get_seller_dom_and_picture_url(url, dpath):
     # dom
-    driver = webdriver.Firefox(executable_path="/tmp/geckodriver")
+    #driver = webdriver.Firefox(executable_path="/tmp/geckodriver")
+    service = Service("/tmp/geckodriver")
+    driver = webdriver.Firefox(service=service)
     driver.get(url)
     time.sleep(2)
     html = driver.execute_script("return document.body.outerHTML;")
