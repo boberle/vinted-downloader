@@ -10,6 +10,7 @@ import urllib.request
 import urllib
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
 
 from bs4 import BeautifulSoup
 
@@ -64,11 +65,13 @@ def ask_to_save_seller_page_and_picture(url, dpath):
     input("Press Enter when done.")
 
 
-def get_seller_dom_and_picture_url(url, dpath):
+def get_seller_dom_and_picture_url(url, dpath, driver, executable):
     # dom
-    # driver = webdriver.Firefox(executable_path="/tmp/geckodriver")
-    service = Service("/tmp/geckodriver")
-    driver = webdriver.Firefox(service=service)
+    service = Service(driver)
+    options = Options()
+    if executable:
+        options.binary_location = executable
+    driver = webdriver.Firefox(service=service, options=options)
     driver.get(url)
     time.sleep(2)
     html = driver.execute_script("return document.body.outerHTML;")
@@ -90,7 +93,7 @@ def get_seller_dom_and_picture_url(url, dpath):
     return image_url
 
 
-def download_and_save(url, outdpath):
+def download_and_save(url, outdpath, driver, executable):
 
     url = url.rstrip("/")
     parsed = urlparse(url)
@@ -158,7 +161,12 @@ def download_and_save(url, outdpath):
     # seller profile picture
     # soup = BeautifulSoup(seller_page, "lxml")
     # profile_picture_url = get_profile_picture_url(soup)
-    profile_picture_url = get_seller_dom_and_picture_url(seller_url, dpath)
+    profile_picture_url = get_seller_dom_and_picture_url(
+        seller_url,
+        dpath,
+        driver,
+        executable,
+    )
     if profile_picture_url is not None:
         open(os.path.join(dpath, "profile_picture_url"), "w").write(profile_picture_url)
         profile_picture_data = download(profile_picture_url)
@@ -166,30 +174,37 @@ def download_and_save(url, outdpath):
 
 
 def parse_args():
-    # definition
-    parser = argparse.ArgumentParser(
-        prog="progname",
-        description="what the program does",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
-    # arguments (not options)
-    # parser.add_argument("infpaths", nargs="+", help="input files")
+    parser = argparse.ArgumentParser(prog="download_vinted")
     parser.add_argument("url", default="", help="url")
-    # parser.add_argument("outfpath", default="", help="output file")
-    # options
-    # parser.add_argument("--swith", dest="switch", default=False,
-    #   action="store_true", help="")
     parser.add_argument(
         "-d", dest="outdpath", required=False, default="output", help="output directory"
     )
-    # reading
+    parser.add_argument(
+        "--driver",
+        dest="driver",
+        required=False,
+        default="geckodriver",
+        help="driver for selenium, default 'geckodriver'",
+    )
+    parser.add_argument(
+        "--executable",
+        dest="executable",
+        required=False,
+        default=None,
+        help="executable of firefox",
+    )
     args = parser.parse_args()
     return args
 
 
 def main():
     args = parse_args()
-    download_and_save(args.url, args.outdpath)
+    download_and_save(
+        args.url,
+        args.outdpath,
+        args.driver,
+        args.executable,
+    )
 
 
 if __name__ == "__main__":
