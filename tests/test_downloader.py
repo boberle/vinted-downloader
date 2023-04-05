@@ -26,7 +26,7 @@ def main_page_soup_multiple_images() -> BeautifulSoup:
     return _get_soup("20230405-multiple_images.html")
 
 
-def test_get_1_image_url(main_page_soup_1_image):
+def test_get_1_image_url(main_page_soup_1_image: BeautifulSoup) -> None:
     urls = get_image_urls(main_page_soup_1_image)
     assert len(urls) == 1
     assert (
@@ -35,7 +35,7 @@ def test_get_1_image_url(main_page_soup_1_image):
     )
 
 
-def test_get_2_images_urls(main_page_soup_2_images):
+def test_get_2_images_urls(main_page_soup_2_images: BeautifulSoup) -> None:
     urls = get_image_urls(main_page_soup_2_images)
     assert len(urls) == 2
     assert (
@@ -48,7 +48,7 @@ def test_get_2_images_urls(main_page_soup_2_images):
     )
 
 
-def test_get_multiple_image_urls(main_page_soup_multiple_images):
+def test_get_multiple_image_urls(main_page_soup_multiple_images: BeautifulSoup) -> None:
     urls = get_image_urls(main_page_soup_multiple_images)
     assert len(urls) == 19
     assert urls == [
@@ -74,13 +74,13 @@ def test_get_multiple_image_urls(main_page_soup_multiple_images):
     ]
 
 
-def test_get_seller_url(main_page_soup_1_image):
+def test_get_seller_url(main_page_soup_1_image: BeautifulSoup) -> None:
     url = "https://www.vinted.fr/anything/"
     seller_url = get_seller_url(url, main_page_soup_1_image)
     assert seller_url == "https://www.vinted.fr/member/128814359"
 
 
-def test_get_seller_url_test2(main_page_soup_2_images):
+def test_get_seller_url_test2(main_page_soup_2_images: BeautifulSoup) -> None:
     url = "https://www.vinted.fr/anything/"
     seller_url = get_seller_url(url, main_page_soup_2_images)
     assert seller_url == "https://www.vinted.fr/member/25501919"
