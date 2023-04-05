@@ -1,123 +1,116 @@
-import time
+import argparse
+import json
 import os
 import random
-import re
-import json
-import argparse
-
-from urllib.parse import urlparse
-import urllib.request
+import time
 import urllib
+import urllib.error
+import urllib.request
+from argparse import Namespace
+from pathlib import Path
+from urllib.parse import urlparse
+
+from bs4 import BeautifulSoup, Tag
 from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
 from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.firefox.service import Service
 
-from bs4 import BeautifulSoup
-
-SNAP = (
-    1,
-    2,
-    3,
-    4,
-)
-# SNAP = (6, 7, 8)
-# SNAP = ()
+USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36"
+SNAP = (1, 2, 3, 4, 5, 6)
 
 
-def download(url):
+def download(url: str) -> bytes:
     if len(SNAP):
         print("(zzzzzzz...)")
         time.sleep(random.choice(SNAP))
     try:
-        print("Downloading from `%s'" % url)
-        fh = urllib.request.urlopen(url)
+        print("Downloading from '%s'" % url)
+        request = urllib.request.Request(
+            url,
+            data=None,
+            headers={
+                "User-Agent": USER_AGENT,
+            },
+        )
+        fh = urllib.request.urlopen(request)
         return fh.read()
     except urllib.error.URLError:
-        print("*** can't read the page `%s' ***" % url)
-        # input("Press Enter to continue...")
+        print("*** can't read the page '%s' ***" % url)
         raise
 
 
-def save(data, dpath, fname, *, binary=True):
-    fpath = os.path.join(dpath, fname)
-    print(f"Saving '{fpath}'.")
-    open(fpath, "wb" if binary else "w").write(data)
+def save(data: str | bytes, file: Path) -> None:
+    print(f"Saving '{str(file)}'.")
+    if isinstance(data, str):
+        file.write_text(data)
+    else:
+        file.write_bytes(data)
 
 
-def get_profile_picture_url(soup):
-    image_url = None
-    for script in soup.find_all("script", {"data-component-name": "Profile"}):
-        data = json.loads(script.string)
-        assert image_url is None  # only one
-        photo_data = data["userInfoProps"]["user"]["photo"]
-        if photo_data is not None:
-            image_url = photo_data["url"]
-            print(f"Found user profile picture at '{image_url}'.")
-        # no break to check if only one
-    return image_url
+def go(
+    url: str, dest_dir: Path, driver: str, executable: str, source: Path | None = None
+) -> None:
+    output_dir = make_directory_from_url(url, dest_dir)
+    write_url_in_file(url, output_dir)
+
+    soup = download_and_save_main_page(url, output_dir, source)
+
+    # images
+    image_urls = get_image_urls(soup)
+    write_image_url_in_file(image_urls, output_dir)
+    download_and_save_images(image_urls, output_dir)
+
+    # seller page
+    seller_url = get_seller_url(url, soup)
+    write_seller_url_in_file(seller_url, output_dir)
+    download_and_save_seller_page(seller_url, output_dir)
+
+    # get seller dom via selenium
+    seller_soup = get_and_save_seller_html_via_driver(
+        seller_url, output_dir, driver, executable
+    )
+    profile_picture_url = get_seller_profile_picture_url(seller_soup)
+    write_seller_profile_url_in_file(profile_picture_url, output_dir)
+    download_and_save_profile_picture(profile_picture_url, output_dir)
 
 
-def ask_to_save_seller_page_and_picture(url, dpath):
-    seller_dom = os.path.abspath(os.path.join(dpath, "seller_dom.html"))
-    print(f"Go to {url} and save the DOM to {seller_dom}")
-    seller_photo = os.path.abspath(os.path.join(dpath, "profile.jpg"))
-    print(f"Also, save the picture, if any, to {seller_photo}")
-    input("Press Enter when done.")
-
-
-def get_seller_dom_and_picture_url(url, dpath, driver, executable):
-    # dom
-    service = Service(driver)
-    options = Options()
-    if executable:
-        options.binary_location = executable
-    driver = webdriver.Firefox(service=service, options=options)
-    driver.get(url)
-    time.sleep(2)
-    html = driver.execute_script("return document.body.outerHTML;")
-    with open(os.path.join(dpath, "seller_dom.html"), "w") as f:
-        f.write(html)
-    driver.close()
-    # image
-    soup = BeautifulSoup(html, "lxml")
-    image_url = None
-    for img in soup.find_all("img"):
-        if "/f800/" not in img["src"]:
-            continue
-        assert image_url is None  # only one
-        image_url = img["src"]
-        print(f"Found user profile picture at '{image_url}'.")
-        # no break to check if only one
-    if not image_url:
-        raise RuntimeError("User profile picture not found")
-    return image_url
-
-
-def download_and_save(url, outdpath, driver, executable):
-
+def make_directory_from_url(url: str, dest_dir: Path) -> Path:
     url = url.rstrip("/")
     parsed = urlparse(url)
-    # input(parsed)
 
-    # dest dir
     dname = os.path.basename(parsed.path)
-    # input(dname)
     assert dname
-    dpath = os.path.join(outdpath, dname)
-    if os.path.exists(dpath):
-        raise FileExistsError(dpath)
-    os.makedirs(dpath)
 
-    open(os.path.join(dpath, "url"), "w").write(url)
+    dpath = dest_dir / dname
+    if dpath.exists():
+        raise FileExistsError(str(dpath))
+    dpath.mkdir(parents=True, exist_ok=False)
 
-    # main page
-    main_page = download(url).decode("utf-8")
-    save(main_page, dpath, "page.html", binary=False)
+    return dpath
 
-    # item images
+
+def write_url_in_file(url: str, output_dir: Path) -> None:
+    (output_dir / "url").write_text(url)
+
+
+def download_and_save_main_page(
+    url: str, output_dir: Path, source: Path | None
+) -> BeautifulSoup:
+    if source:
+        main_page = source.read_text()
+    else:
+        main_page = download(url).decode("utf-8")
+    save(main_page, output_dir / "page.html")
     soup = BeautifulSoup(main_page, "lxml")
+    return soup
+
+
+def get_image_urls(soup: BeautifulSoup) -> list[str]:
+    image_urls: list[str] = []
+
     div = soup.find("div", class_="item-photos")
-    image_urls = []
+    assert div and isinstance(div, Tag)
+
     for figure in div.find_all("figure"):
         image_url = figure.a["href"]
         print("Found an image at '%s'" % image_url)
@@ -133,49 +126,94 @@ def download_and_save(url, outdpath, driver, executable):
             image_urls.append(image_url)
 
     assert image_urls
+    return image_urls
 
-    open(os.path.join(dpath, "image_urls"), "w").write("\n".join(image_urls))
 
-    for i, image_url in enumerate(image_urls):
-        image_data = download(image_url)
-        save(image_data, dpath, f"image_{i}.jpg", binary=True)
+def write_image_url_in_file(urls: list[str], output_dir: Path) -> None:
+    (output_dir / "image_urls").write_text("\n".join(urls))
 
-    # seller url
-    # seller_url = soup.find('span', class_="user-login-name").a['href']
-    seller_id = soup.find(
+
+def download_and_save_images(urls: list[str], output_dir: Path) -> None:
+    for i, url in enumerate(urls):
+        data = download(url)
+        save(data, output_dir / f"image_{i}.jpg")
+
+
+def get_seller_url(url: str, soup: BeautifulSoup) -> str:
+    element = soup.find(
         "script",
         attrs={"data-component-name": "ItemUserInfo"},
-    ).string
+    )
+    assert element and isinstance(element, Tag)
+    seller_id = element.string
+
     assert seller_id
     seller_id = json.loads(seller_id)["user"]["id"]
-    seller_url = f"/members/{seller_id}"
+
+    parsed = urlparse(url)
+    seller_url = f"/member/{seller_id}"
     seller_url = f"{parsed.scheme}://{parsed.netloc}{seller_url}"
-    # input(seller_url)
-
-    open(os.path.join(dpath, "seller_url"), "w").write(seller_url)
-
-    # seller page
-    seller_page = download(seller_url).decode("utf-8")
-    save(seller_page, dpath, "seller.html", binary=False)
-
-    # seller profile picture
-    # soup = BeautifulSoup(seller_page, "lxml")
-    # profile_picture_url = get_profile_picture_url(soup)
-    profile_picture_url = get_seller_dom_and_picture_url(
-        seller_url,
-        dpath,
-        driver,
-        executable,
-    )
-    if profile_picture_url is not None:
-        open(os.path.join(dpath, "profile_picture_url"), "w").write(profile_picture_url)
-        profile_picture_data = download(profile_picture_url)
-        save(profile_picture_data, dpath, f"profile_picture.jpg", binary=True)
+    return seller_url
 
 
-def parse_args():
+def write_seller_url_in_file(url: str, output_dir: Path) -> None:
+    (output_dir / "seller_url").write_text(url)
+
+
+def download_and_save_seller_page(url: str, output_dir: Path) -> None:
+    seller_page = download(url).decode("utf-8")
+    save(seller_page, output_dir / "seller.html")
+
+
+def get_and_save_seller_html_via_driver(
+    url: str, output_dir: Path, driver: str, executable: str
+) -> BeautifulSoup:
+    service = Service(driver)
+    options = Options()
+    if executable:
+        options.binary_location = executable
+
+    ffdriver = webdriver.Firefox(service=service, options=options)
+    ffdriver.get(url)
+
+    time.sleep(2)
+    html = ffdriver.execute_script("return document.body.outerHTML;")
+    save(html, output_dir / "seller_dom.html")
+    ffdriver.close()
+
+    soup = BeautifulSoup(html, "lxml")
+    return soup
+
+
+def get_seller_profile_picture_url(soup: BeautifulSoup) -> str:
+    picture_url = None
+    for img in soup.find_all("img"):
+        if "/f800/" not in img["src"]:
+            continue
+        assert picture_url is None  # only one image
+        picture_url = img["src"]
+        print(f"Found user profile picture at '{picture_url}'.")
+        # no break to check if only one
+
+    if not picture_url:
+        raise RuntimeError("User profile picture not found")
+
+    return picture_url
+
+
+def write_seller_profile_url_in_file(url: str, output_dir: Path) -> None:
+    (output_dir / "profile_picture_url").write_text(url)
+
+
+def download_and_save_profile_picture(url: str, output_dir: Path) -> None:
+    data = download(url)
+    save(data, output_dir / "profile_picture.jpg")
+
+
+def parse_args() -> Namespace:
     parser = argparse.ArgumentParser(prog="download_vinted")
-    parser.add_argument("url", default="", help="url")
+
+    parser.add_argument("url", default="", help="url or file")
     parser.add_argument(
         "-d", dest="outdpath", required=False, default="output", help="output directory"
     )
@@ -193,17 +231,26 @@ def parse_args():
         default=None,
         help="executable of firefox",
     )
+    parser.add_argument(
+        "--source",
+        dest="source",
+        required=False,
+        default=None,
+        help="source of the main page html",
+    )
     args = parser.parse_args()
+
     return args
 
 
-def main():
+def main() -> None:
     args = parse_args()
-    download_and_save(
-        args.url,
-        args.outdpath,
-        args.driver,
-        args.executable,
+    go(
+        url=args.url,
+        dest_dir=Path(args.outdpath),
+        driver=args.driver,
+        source=Path(args.source) if args.source else None,
+        executable=args.executable,
     )
 
 
