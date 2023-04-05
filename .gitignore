@@ -2,3 +2,6 @@ __pycache__/
 .idea/
 private/
 venv/
+output*/
+.mypy_cache/
+.pytest_cache/
