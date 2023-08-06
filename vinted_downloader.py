@@ -35,7 +35,7 @@ class Summary:
         summary += f"seller: {self.seller}\n"
         summary += f"seller id: {self.seller_id}\n"
         summary += f"seller last logged in: {self.last_logged_in}\n"
-        path.write_text(summary)
+        path.write_text(summary, encoding="utf-8")
 
 
 def main() -> int:
@@ -110,7 +110,7 @@ def download_photos(output_dir: Path, template_name: str, *urls: str) -> None:
 
 
 def save_json(path: Path, data: dict[Any, Any]) -> None:
-    json.dump(data, path.open("w"), indent=2)
+    json.dump(data, path.open("w", encoding="utf-8"), indent=2)
 
 
 def load_html(source: Path | str) -> str:
