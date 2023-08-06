@@ -1,86 +1,42 @@
 from pathlib import Path
 
 import pytest
-from bs4 import BeautifulSoup
 
-from vinted_downloader import get_image_urls, get_seller_url
-
-
-def _get_soup(file: str) -> BeautifulSoup:
-    html = (Path(__file__).parent / "testdata" / file).read_text()
-    return BeautifulSoup(html, "lxml")
+from vinted_downloader import Details, load_html
 
 
 @pytest.fixture
-def main_page_soup_1_image() -> BeautifulSoup:
-    return _get_soup("20230405-1_image.html")
+def testdata_dir() -> Path:
+    return Path(__file__).parent / "testdata"
 
 
 @pytest.fixture
-def main_page_soup_2_images() -> BeautifulSoup:
-    return _get_soup("20230405-2_images.html")
+def html_data_1(testdata_dir: Path) -> str:
+    return load_html(testdata_dir / "20230806_multiple_images.html")
 
 
-@pytest.fixture
-def main_page_soup_multiple_images() -> BeautifulSoup:
-    return _get_soup("20230405-multiple_images.html")
+def test_found_details(html_data_1: str) -> None:
+    details = Details(html_data_1)
+    assert details.json["item"]["title"] == "Bruidtop 'Blanca', croptop maat S/M (38)"
 
-
-def test_get_1_image_url(main_page_soup_1_image: BeautifulSoup) -> None:
-    urls = get_image_urls(main_page_soup_1_image)
-    assert len(urls) == 1
+    assert details.title == "Bruidtop 'Blanca', croptop maat S/M (38)"
     assert (
-        urls[0]
-        == "https://images1.vinted.net/t/03_01405_9JY2uYeCjxhTp9jTd4qBb9fU/f800/1680635440.jpeg?s=dd20ffc1ff5924791a066aacd41289175f6a27e8"
+        details.description
+        == "Ongedragen bruidstopje! Voor een tweedelige jurk (rok en top). Ik had meerdere topjes, deze uiteindelijk niet gedragen. Mooi kant, kwalitatieve stof, van bruidsmodewinkel: Labude in Köln. Nieuwprijs is 650eu. Kleur: ivoor."
     )
-
-
-def test_get_2_images_urls(main_page_soup_2_images: BeautifulSoup) -> None:
-    urls = get_image_urls(main_page_soup_2_images)
-    assert len(urls) == 2
+    assert details.seller == "someuser"
+    assert details.seller_id == 123456
+    assert details.seller_last_logged_in == "2023-08-05T19:32:19+02:00"
     assert (
-        urls[0]
-        == "https://images1.vinted.net/t/03_00b7c_KccCjUsHdvRX9wv2pjFPFSRy/f800/1680361243.jpeg?s=faa4e638193a44f9def2f2ecee6bcc56c77ecaa2"
+        details.seller_photo_url
+        == "https://images1.vinted.net/tc/03_00220_MTRW4DpP4QqthgPid4asMuah/1648879549.jpeg?s=b5bbb35fc60ec9c9bca454f56a8a78d8aeadac82"
     )
-    assert (
-        urls[1]
-        == "https://images1.vinted.net/t/03_01116_TGmUy4Lwnyc8nHupN7JLjiuV/f800/1680361243.jpeg?s=ad5645755da06ed646a913efa3542c5abc014e2b"
-    )
-
-
-def test_get_multiple_image_urls(main_page_soup_multiple_images: BeautifulSoup) -> None:
-    urls = get_image_urls(main_page_soup_multiple_images)
-    assert len(urls) == 19
-    assert urls == [
-        "https://images1.vinted.net/t/03_00209_zv1s8j4GzfDAfvJbxF1So6NW/f800/1679679459.jpeg?s=3d16d3c4c25e78f94c9e828783b2e37554db8c4f",
-        "https://images1.vinted.net/t/03_01303_fUR7Et3tMmptew974LQXihCR/f800/1679679459.jpeg?s=ab0f6b4361a5abe5a0275177995ced2d07628099",
-        "https://images1.vinted.net/t/02_00005_T6ZDNkJhPT1QQhJphaRSaz5d/f800/1679679459.jpeg?s=171eaddcbdab4dd0fb7df19e1cf14a0dac4a3019",
-        "https://images1.vinted.net/t/03_002be_yHeGtH5zfJAn1DQUGezN4W1f/f800/1679679459.jpeg?s=b5272fed403e21c2dc451278fa2a0abc96833875",
-        "https://images1.vinted.net/t/03_01f95_WQB9nX6AsAttXEWLUFpNeFDF/f800/1679679459.jpeg?s=3ddaea3fe4a23e169e9a10a5a7f6ff2b6a316bf8",
-        "https://images1.vinted.net/t/01_01254_gji5LtwXAkFs42Bvh67DjdMa/f800/1679679459.jpeg?s=ba337df9ee2857c48cf88621a11704eda9edb3cf",
-        "https://images1.vinted.net/t/02_00994_dg3D2LaMx3U53gZcrSa9kHey/f800/1679679459.jpeg?s=fa02f9858ae4e6a5a49c33be08cedbecde0f8254",
-        "https://images1.vinted.net/t/01_01c05_Y85AnVPxXsF7Zz5EcF56XuSb/f800/1679679459.jpeg?s=435fdd6b368a8f608c1145b31d5c7f3280843b2a",
-        "https://images1.vinted.net/t/03_00dea_EYgfAaneRxu8b5UZ9ZRwrQbc/f800/1679679459.jpeg?s=9fb0dc7eed1efb8883c971a569c7c227743b526f",
-        "https://images1.vinted.net/t/01_0174b_NcMzeEKwjDKaXiXbk3gnGZMZ/f800/1679679459.jpeg?s=94a7633f31948e6016660bad236796c8a3859f3b",
-        "https://images1.vinted.net/t/03_01bf1_SLTekSiRC9W8hwB4U9WnKzV9/f800/1679679459.jpeg?s=bad9d7a0f514d54888d5c2e92c3b183e626cc460",
-        "https://images1.vinted.net/t/02_01e1e_fV7AheoxuV4PUyHwjfgrjrQK/f800/1679679459.jpeg?s=e84c4b15b010055d3c847f8cf797b6152b194cec",
-        "https://images1.vinted.net/t/01_01254_gji5LtwXAkFs42Bvh67DjdMa/f800/1679679459.jpeg?s=ba337df9ee2857c48cf88621a11704eda9edb3cf",
-        "https://images1.vinted.net/t/02_00994_dg3D2LaMx3U53gZcrSa9kHey/f800/1679679459.jpeg?s=fa02f9858ae4e6a5a49c33be08cedbecde0f8254",
-        "https://images1.vinted.net/t/01_01c05_Y85AnVPxXsF7Zz5EcF56XuSb/f800/1679679459.jpeg?s=435fdd6b368a8f608c1145b31d5c7f3280843b2a",
-        "https://images1.vinted.net/t/03_00dea_EYgfAaneRxu8b5UZ9ZRwrQbc/f800/1679679459.jpeg?s=9fb0dc7eed1efb8883c971a569c7c227743b526f",
-        "https://images1.vinted.net/t/01_0174b_NcMzeEKwjDKaXiXbk3gnGZMZ/f800/1679679459.jpeg?s=94a7633f31948e6016660bad236796c8a3859f3b",
-        "https://images1.vinted.net/t/03_01bf1_SLTekSiRC9W8hwB4U9WnKzV9/f800/1679679459.jpeg?s=bad9d7a0f514d54888d5c2e92c3b183e626cc460",
-        "https://images1.vinted.net/t/02_01e1e_fV7AheoxuV4PUyHwjfgrjrQK/f800/1679679459.jpeg?s=e84c4b15b010055d3c847f8cf797b6152b194cec",
+    assert details.full_size_photo_urls == [
+        "https://images1.vinted.net/tc/01_0001a_aT7WiZ1BdMeoiyTKEXnBBV8i/1688230835.jpeg?s=9866ce62e4d4e49115c7e8b770ee2fd8470a96cc",
+        "https://images1.vinted.net/tc/03_023eb_aR7PJvsJnwjPrm16sdDBiDh5/1688230835.jpeg?s=2e7f7298ba80b680583dc141b2d4736e82df620a",
+        "https://images1.vinted.net/tc/03_01fe7_mKeKP3msFbxHdRtDT3jpoBNj/1688230835.jpeg?s=d3df16ce2e83d323500c3874067d626537a45b2a",
+        "https://images1.vinted.net/tc/01_0239e_hxvrRBZPwEDgf71RW7Dpu18z/1688276801.jpeg?s=52bffcd2a7209014acd704a895e0ec14642d8a5d",
+        "https://images1.vinted.net/tc/03_00a03_gMhNMqSTzxhQhmn8CBPeCYfC/1688276801.jpeg?s=752cd97cfa1e9102149605f17a5efbf4fc6b32cb",
+        "https://images1.vinted.net/tc/03_02533_SVYnFdcJRxxLWJPwvVvJfK2m/1688276801.jpeg?s=89dbb9a3e2a09175c4be3bbc3b610f8a2b90d95d",
+        "https://images1.vinted.net/tc/02_00f95_mmY9RQwhw6znYJfUrx4Qxt8f/1688276801.jpeg?s=8fac9301bb65c4afd033c3be7bb972cfc959fff9",
     ]
-
-
-def test_get_seller_url(main_page_soup_1_image: BeautifulSoup) -> None:
-    url = "https://www.vinted.fr/anything/"
-    seller_url = get_seller_url(url, main_page_soup_1_image)
-    assert seller_url == "https://www.vinted.fr/member/128814359"
-
-
-def test_get_seller_url_test2(main_page_soup_2_images: BeautifulSoup) -> None:
-    url = "https://www.vinted.fr/anything/"
-    seller_url = get_seller_url(url, main_page_soup_2_images)
-    assert seller_url == "https://www.vinted.fr/member/25501919"
