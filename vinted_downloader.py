@@ -1,22 +1,17 @@
 import argparse
 import json
 import random
+import re
 import sys
 import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast
 
-from bs4 import BeautifulSoup
+import requests
 
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/117.0.0.0 Safari/537.36"
-SNAP = (1, 2, 3)
-
-
-class ItemDetailsNotFound(Exception):
-    ...
+SNAP = [1, 2, 3]
 
 
 @dataclass
@@ -40,18 +35,21 @@ class Summary:
 
 def main() -> int:
     args = parse_args()
-    source: str | Path = (
-        args.source if args.source.startswith("http") else Path(args.source)
-    )
+    item_url: str = args.item_url
     download_seller_profile: bool = args.seller
     output_dir: Path = Path(args.output_dir)
 
-    html = load_html(source)
-    details = Details(html)
+    match = re.search(r"(?<=/)\d+(?=-)", item_url)
+    if match is None:
+        raise RuntimeError("Unable to find item_url")
+    item_id = int(match.group(0))
 
-    save_json(output_dir / "item.json", details.json)
+    client = VintedClient()
+    details = Details(client.download_item_details(item_id=item_id))
+
+    save_json(output_dir / "item.json", details.data)
     Summary(
-        source=str(source),
+        source=item_url,
         title=details.title,
         description=details.description,
         seller=details.seller,
@@ -59,9 +57,11 @@ def main() -> int:
         last_logged_in=details.seller_last_logged_in,
     ).save(output_dir / "item_summary")
 
-    download_photos(output_dir, "photo_{index}.jpg", *details.full_size_photo_urls)
+    download_photos(
+        output_dir, "photo_{index}.jpg", client, *details.full_size_photo_urls
+    )
     if download_seller_profile and details.seller_photo_url:
-        download_photos(output_dir, "seller.jpg", details.seller_photo_url)
+        download_photos(output_dir, "seller.jpg", client, details.seller_photo_url)
 
     return 0
 
@@ -69,7 +69,7 @@ def main() -> int:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(prog="vinted_downloader")
 
-    parser.add_argument("source", default="", help="url or file")
+    parser.add_argument("item_url", default="", help="url of an item")
     parser.add_argument(
         "-o",
         dest="output_dir",
@@ -87,98 +87,88 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def download(url: str) -> bytes:
-    print("downloading from '%s'" % url)
-    if len(SNAP):
-        time.sleep(random.choice(SNAP))
-    request = urllib.request.Request(
-        url,
-        data=None,
-        headers={
-            "User-Agent": USER_AGENT,
-        },
-    )
-    fh = urllib.request.urlopen(request)
-    return cast(bytes, fh.read())
+@dataclass
+class VintedClient:
+    snap: list[int] | None = field(default_factory=lambda: SNAP)
+
+    def __post_init__(self) -> None:
+        headers = {
+            "User-Agent": "My User Agent 1.0",
+            "Accept-Language": "fr-FR,fr;q=0.5",
+        }
+        self.session = requests.Session()
+        self.session.headers.update(headers)
+        # connect the first time to Vinted to get the anonymous cookie auth
+        self.session.get("https://www.vinted.fr")
+
+    def download_item_details(self, item_id: int) -> dict[str, Any]:
+        self._snap()
+        url = f"https://www.vinted.fr/api/v2/items/{item_id}?localize=false"
+        print("downloading details from '%s'" % url)
+        data = cast(dict[str, Any], self.session.get(url).json())
+        return data
+
+    def download_resource(self, url: str) -> bytes:
+        self._snap()
+        print("downloading resource from '%s'" % url)
+        resource = self.session.get(url).content
+        return resource
+
+    def _snap(self) -> None:
+        if self.snap is not None and len(self.snap):
+            time.sleep(random.choice(self.snap))
 
 
-def download_photos(output_dir: Path, template_name: str, *urls: str) -> None:
+def download_photos(
+    output_dir: Path, template_name: str, client: VintedClient, *urls: str
+) -> None:
     for i, url in enumerate(urls):
-        data = download(url)
+        data = client.download_resource(url)
         fn = template_name.format(index=i)
         (output_dir / fn).write_bytes(data)
 
 
-def save_json(path: Path, data: dict[Any, Any]) -> None:
+def save_json(path: Path, data: dict[str, Any]) -> None:
     json.dump(data, path.open("w", encoding="utf-8"), indent=2)
 
 
-def load_html(source: Path | str) -> str:
-    if isinstance(source, Path):
-        html = source.read_text()
-    else:
-        html = download(source).decode("utf-8")
-    return html
-
-
+@dataclass
 class Details:
-    def __init__(self, html: str):
-        self._json_data = self._build_from_html(html)
-
-    def _build_from_html(self, html: str) -> dict[Any, Any]:
-        soup = BeautifulSoup(html, "lxml")
-        return self._extract_item_details_json(soup)
-
-    def _extract_item_details_json(self, soup: BeautifulSoup) -> dict[Any, Any]:
-        tag = soup.find(
-            "script",
-            attrs={
-                "type": "application/json",
-                "class": "js-react-on-rails-component",
-                "data-component-name": "ItemDetails",
-            },
-        )
-        if not tag:
-            raise ItemDetailsNotFound
-
-        try:
-            return cast(dict[Any, Any], json.loads(tag.text))
-        except json.JSONDecodeError:
-            raise ItemDetailsNotFound
-
-    @property
-    def json(self) -> dict[Any, Any]:
-        return self._json_data.copy()
+    data: dict[str, Any]
 
     @property
     def title(self) -> str:
-        return str(self._json_data["item"]["title"])
+        return str(self.data["item"]["title"])
 
     @property
     def description(self) -> str:
-        return str(self._json_data["item"]["description"])
+        return str(self.data["item"]["description"])
 
     @property
     def seller(self) -> str:
-        return str(self._json_data["item"]["user"]["login"])
+        return str(self.data["item"]["user"]["login"])
 
     @property
     def seller_id(self) -> int:
-        return cast(int, self._json_data["item"]["user"]["id"])
+        return cast(int, self.data["item"]["user"]["id"])
 
     @property
     def seller_last_logged_in(self) -> str:
-        return str(self._json_data["item"]["user"]["last_logged_on_ts"])
+        # some typo in the json key...
+        return str(
+            self.data["item"]["user"].get("last_logged_on_ts")
+            or self.data["item"]["user"]["last_loged_on_ts"]
+        )
 
     @property
     def full_size_photo_urls(self) -> list[str]:
-        return [photo["full_size_url"] for photo in self._json_data["item"]["photos"]]
+        return [photo["full_size_url"] for photo in self.data["item"]["photos"]]
 
     @property
     def seller_photo_url(self) -> str | None:
         try:
-            url = self._json_data["item"]["user"]["photo"]["full_size_url"]
-        except KeyError:
+            url = self.data["item"]["user"]["photo"]["full_size_url"]
+        except (KeyError, TypeError):
             return None
         else:
             return url or None
