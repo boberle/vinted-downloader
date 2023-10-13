@@ -1,8 +1,49 @@
+import json
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 
-from vinted_downloader import Details, load_html
+from tests.conftest import TestWriter, TestClientFactory
+from vinted_downloader import Downloader, Details
+
+
+@pytest.mark.parametrize(
+    "url,exp",
+    [
+        [
+            "https://www.vinted.fr/items/3397265884-la-voleuse-de-livres?referrer=catalog",
+            3397265884,
+        ],
+        [
+            "https://www.vinted.fr/items/3682535752-jeu-pc?referrer=catalog",
+            3682535752,
+        ],
+    ],
+)
+def test_downloader_get_item_id(url: str, exp: int) -> None:
+    assert Downloader._get_item_id(url) == exp
+
+
+@pytest.mark.parametrize(
+    "url,exp",
+    [
+        [
+            "https://www.vinted.fr/items/3397265884-la-voleuse-de-livres?referrer=catalog",
+            "fr",
+        ],
+        [
+            "https://www.vinted.de/items/3604002439-haba-meine-ersten-puzzles-baustelle?referrer=catalog",
+            "de",
+        ],
+        [
+            "https://www.vinted.co.uk/items/3597904925-dobble-classic-mini-travel-game?referrer=catalog",
+            "co.uk",
+        ],
+    ],
+)
+def test_downloader_get_vinted_tld(url: str, exp: str) -> None:
+    assert Downloader._get_vinted_tld(url) == exp
 
 
 @pytest.fixture
@@ -11,32 +52,84 @@ def testdata_dir() -> Path:
 
 
 @pytest.fixture
-def html_data_1(testdata_dir: Path) -> str:
-    return load_html(testdata_dir / "20230806_multiple_images.html")
-
-
-def test_found_details(html_data_1: str) -> None:
-    details = Details(html_data_1)
-    assert details.json["item"]["title"] == "Bruidtop 'Blanca', croptop maat S/M (38)"
-
-    assert details.title == "Bruidtop 'Blanca', croptop maat S/M (38)"
-    assert (
-        details.description
-        == "Ongedragen bruidstopje! Voor een tweedelige jurk (rok en top). Ik had meerdere topjes, deze uiteindelijk niet gedragen. Mooi kant, kwalitatieve stof, van bruidsmodewinkel: Labude in Köln. Nieuwprijs is 650eu. Kleur: ivoor."
+def json_data_1(testdata_dir: Path) -> dict[str, Any]:
+    return cast(
+        dict[str, Any],
+        json.load((testdata_dir / "item.json").open()),
     )
-    assert details.seller == "someuser"
-    assert details.seller_id == 123456
-    assert details.seller_last_logged_in == "2023-08-05T19:32:19+02:00"
-    assert (
-        details.seller_photo_url
-        == "https://images1.vinted.net/tc/03_00220_MTRW4DpP4QqthgPid4asMuah/1648879549.jpeg?s=b5bbb35fc60ec9c9bca454f56a8a78d8aeadac82"
+
+
+def test_downloader_download(json_data_1: dict[str, Any]) -> None:
+    client_factory = TestClientFactory(
+        details={123456: json_data_1},
+        downloads={
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b1": b"1",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b2": b"2",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b3": b"3",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b4": b"4",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b5": b"5",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b6": b"6",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b7": b"7",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b8": b"8",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b9": b"9",
+            "https://images1.vinted.net/tc/123.jpeg?s=1a2b10": b"10",
+            "https://images1.vinted.net/tc/321.jpeg?s=3c4d": b"11",
+        },
     )
+    writer = TestWriter()
+    downloader = Downloader(client_factory, writer)
+    downloader.download(
+        item_url="https://www.vinted.fr/items/123456-foobar?referrer=catalog",
+        download_seller_profile=True,
+    )
+
+    summary = """source: https://www.vinted.fr/items/123456-foobar?referrer=catalog
+title: The title
+description: The description
+Another line
+seller: me
+seller id: 654321
+seller last logged in: 2023-10-12T19:28:44+01:00
+"""
+
+    exp = {
+        Path("item.json"): json.dumps(json_data_1),
+        Path("item_summary"): summary,
+        Path("photo_0.jpg"): b"1",
+        Path("photo_1.jpg"): b"2",
+        Path("photo_2.jpg"): b"3",
+        Path("photo_3.jpg"): b"4",
+        Path("photo_4.jpg"): b"5",
+        Path("photo_5.jpg"): b"6",
+        Path("photo_6.jpg"): b"7",
+        Path("photo_7.jpg"): b"8",
+        Path("photo_8.jpg"): b"9",
+        Path("photo_9.jpg"): b"10",
+        Path("seller.jpg"): b"11",
+    }
+
+    assert len(writer.data) == len(exp)
+    for k, v in writer.data.items():
+        assert exp[k] == v
+
+
+def test_details(json_data_1: dict[str, Any]) -> None:
+    details = Details(json_data_1)
+    assert details.title == "The title"
+    assert details.description == "The description\nAnother line"
+    assert details.seller == "me"
+    assert details.seller_id == 654321
+    assert details.seller_last_logged_in == "2023-10-12T19:28:44+01:00"
+    assert details.seller_photo_url == "https://images1.vinted.net/tc/321.jpeg?s=3c4d"
     assert details.full_size_photo_urls == [
-        "https://images1.vinted.net/tc/01_0001a_aT7WiZ1BdMeoiyTKEXnBBV8i/1688230835.jpeg?s=9866ce62e4d4e49115c7e8b770ee2fd8470a96cc",
-        "https://images1.vinted.net/tc/03_023eb_aR7PJvsJnwjPrm16sdDBiDh5/1688230835.jpeg?s=2e7f7298ba80b680583dc141b2d4736e82df620a",
-        "https://images1.vinted.net/tc/03_01fe7_mKeKP3msFbxHdRtDT3jpoBNj/1688230835.jpeg?s=d3df16ce2e83d323500c3874067d626537a45b2a",
-        "https://images1.vinted.net/tc/01_0239e_hxvrRBZPwEDgf71RW7Dpu18z/1688276801.jpeg?s=52bffcd2a7209014acd704a895e0ec14642d8a5d",
-        "https://images1.vinted.net/tc/03_00a03_gMhNMqSTzxhQhmn8CBPeCYfC/1688276801.jpeg?s=752cd97cfa1e9102149605f17a5efbf4fc6b32cb",
-        "https://images1.vinted.net/tc/03_02533_SVYnFdcJRxxLWJPwvVvJfK2m/1688276801.jpeg?s=89dbb9a3e2a09175c4be3bbc3b610f8a2b90d95d",
-        "https://images1.vinted.net/tc/02_00f95_mmY9RQwhw6znYJfUrx4Qxt8f/1688276801.jpeg?s=8fac9301bb65c4afd033c3be7bb972cfc959fff9",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b1",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b2",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b3",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b4",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b5",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b6",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b7",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b8",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b9",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b10",
     ]

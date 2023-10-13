@@ -9,7 +9,7 @@ import time
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast, Protocol
+from typing import Any, cast, Protocol, Generator
 
 import requests
 
@@ -26,59 +26,69 @@ class Summary:
     seller_id: int
     last_logged_in: str
 
-    def save(self, path: Path) -> None:
+    def __str__(self) -> str:
         summary = f"source: {self.source}\n"
         summary += f"title: {self.title}\n"
         summary += f"description: {self.description}\n"
         summary += f"seller: {self.seller}\n"
         summary += f"seller id: {self.seller_id}\n"
         summary += f"seller last logged in: {self.last_logged_in}\n"
-        path.write_text(summary, encoding="utf-8")
+        return summary
 
 
 @dataclass
 class Downloader:
     client_factory: ClientFactory
+    writer: Writer
 
     def download(
-        self, item_url: str, download_seller_profile: bool, output_dir: Path
+        self,
+        item_url: str,
+        download_seller_profile: bool,
     ) -> None:
         item_id = self._get_item_id(item_url)
         vinted_tld = self._get_vinted_tld(item_url)
         client = self.client_factory.build(vinted_tld=vinted_tld)
         details = Details(client.download_item_details(item_id=item_id))
 
-        self._save_json(output_dir / "item.json", details.data)
-        Summary(
+        self.writer.write_text(Path("item.json"), json.dumps(details.data))
+        summary = Summary(
             source=item_url,
             title=details.title,
             description=details.description,
             seller=details.seller,
             seller_id=details.seller_id,
             last_logged_in=details.seller_last_logged_in,
-        ).save(output_dir / "item_summary")
-
-        client.download_photos(
-            output_dir, "photo_{index}.jpg", *details.full_size_photo_urls
         )
-        if download_seller_profile and details.seller_photo_url:
-            client.download_photos(output_dir, "seller.jpg", details.seller_photo_url)
+        self.writer.write_text(Path("item_summary"), str(summary))
 
-    def _get_vinted_tld(self, item_url: str) -> str:
-        match = re.search(r"(?<=\.)[a-z.]+(?=/)", item_url)
+        for i, photo_bytes in enumerate(
+            client.download_photos(*details.full_size_photo_urls)
+        ):
+            self.writer.write_bytes(Path(f"photo_{i}.jpg"), photo_bytes)
+
+        if download_seller_profile and details.seller_photo_url:
+            photo_bytes = client.download_photo(details.seller_photo_url)
+            self.writer.write_bytes(Path("seller.jpg"), photo_bytes)
+
+    @staticmethod
+    def _get_vinted_tld(item_url: str) -> str:
+        match = re.search(r"(?<=vinted\.)[a-z.]+(?=/)", item_url)
         if match is None:
             raise RuntimeError("Unable to find vinted tld")
         vinted_tld = match.group(0)
         return vinted_tld
 
-    def _get_item_id(self, item_url: str) -> int:
+    @staticmethod
+    def _get_item_id(item_url: str) -> int:
         match = re.search(r"(?<=/)\d+(?=-)", item_url)
         if match is None:
             raise RuntimeError("Unable to find item_url")
         item_id = int(match.group(0))
         return item_id
 
-    def _save_json(self, path: Path, data: dict[str, Any]) -> None:
+    @staticmethod
+    def _save_json(path: Path, data: dict[str, Any]) -> None:
         json.dump(data, path.open("w", encoding="utf-8"), indent=2)
 
 
@@ -88,11 +98,12 @@ def main() -> int:
     download_seller_profile: bool = args.seller
     output_dir: Path = Path(args.output_dir)
 
-    downloader = Downloader(client_factory=VintedClientFactory())
+    downloader = Downloader(
+        client_factory=VintedClientFactory(), writer=FileWriter(output_dir=output_dir)
+    )
     downloader.download(
         item_url=item_url,
         download_seller_profile=download_seller_profile,
-        output_dir=output_dir,
     )
 
     return 0
@@ -125,12 +136,16 @@ class Client(Protocol):
         ...
 
     @abstractmethod
-    def download_photos(self, output_dir: Path, template_name: str, *urls: str) -> None:
+    def download_photos(self, *urls: str) -> Generator[bytes, None, None]:
+        ...
+
+    @abstractmethod
+    def download_photo(self, url: str) -> bytes:
         ...
 
 
 @dataclass
-class VintedClient:
+class VintedClient(Client):
     vinted_tld: str
     snap: list[int] | None = field(default_factory=lambda: SNAP)
 
@@ -155,11 +170,12 @@ class VintedClient:
         if self.snap is not None and len(self.snap):
             time.sleep(random.choice(self.snap))
 
-    def download_photos(self, output_dir: Path, template_name: str, *urls: str) -> None:
-        for i, url in enumerate(urls):
-            data = self._download_resource(url)
-            fn = template_name.format(index=i)
-            (output_dir / fn).write_bytes(data)
+    def download_photos(self, *urls: str) -> Generator[bytes, None, None]:
+        for url in urls:
+            yield self.download_photo(url)
+
+    def download_photo(self, url: str) -> bytes:
+        return self._download_resource(url)
 
     def _download_resource(self, url: str) -> bytes:
         self._snap()
@@ -169,16 +185,35 @@ class VintedClient:
 
 
 class ClientFactory(Protocol):
-    @staticmethod
     @abstractmethod
-    def build(vinted_tld: str) -> Client:
+    def build(self, vinted_tld: str) -> Client:
         ...
 
 
 class VintedClientFactory(ClientFactory):
-    @staticmethod
-    def build(vinted_tld: str) -> VintedClient:
+    def build(self, vinted_tld: str) -> VintedClient:
         return VintedClient(vinted_tld=vinted_tld)
+
+
+class Writer(Protocol):
+    @abstractmethod
+    def write_text(self, file: Path, data: str) -> None:
+        ...
+
+    @abstractmethod
+    def write_bytes(self, file: Path, data: bytes) -> None:
+        ...
+
+
+@dataclass
+class FileWriter(Writer):
+    output_dir: Path
+
+    def write_text(self, file: Path, data: str) -> None:
+        (self.output_dir / file).write_text(data, encoding="utf-8")
+
+    def write_bytes(self, file: Path, data: bytes) -> None:
+        (self.output_dir / file).write_bytes(data)
 
 
 @dataclass
