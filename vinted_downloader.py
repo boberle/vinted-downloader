@@ -92,44 +92,6 @@ class Downloader:
         json.dump(data, path.open("w", encoding="utf-8"), indent=2)
 
 
-def main() -> int:
-    args = parse_args()
-    item_url: str = args.item_url
-    download_seller_profile: bool = args.seller
-    output_dir: Path = Path(args.output_dir)
-
-    downloader = Downloader(
-        client_factory=VintedClientFactory(), writer=FileWriter(output_dir=output_dir)
-    )
-    downloader.download(
-        item_url=item_url,
-        download_seller_profile=download_seller_profile,
-    )
-
-    return 0
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="vinted_downloader")
-
-    parser.add_argument("item_url", default="", help="url of an item")
-    parser.add_argument(
-        "-o",
-        dest="output_dir",
-        required=False,
-        default=".",
-        help="output directory (default is current directory)",
-    )
-    parser.add_argument(
-        "--seller",
-        default=False,
-        action="store_true",
-        help="download seller picture profile",
-    )
-    args = parser.parse_args()
-    return args
-
-
 class Client(Protocol):
     @abstractmethod
     def download_item_details(self, item_id: int) -> dict[str, Any]:
@@ -256,6 +218,44 @@ class Details:
             return None
         else:
             return url or None
+
+
+def main() -> int:
+    args = parse_args()
+    item_url: str = args.item_url
+    download_seller_profile: bool = args.seller
+    output_dir: Path = Path(args.output_dir)
+
+    downloader = Downloader(
+        client_factory=VintedClientFactory(), writer=FileWriter(output_dir=output_dir)
+    )
+    downloader.download(
+        item_url=item_url,
+        download_seller_profile=download_seller_profile,
+    )
+
+    return 0
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="vinted_downloader")
+
+    parser.add_argument("item_url", default="", help="url of an item")
+    parser.add_argument(
+        "-o",
+        dest="output_dir",
+        required=False,
+        default=".",
+        help="output directory (default is current directory)",
+    )
+    parser.add_argument(
+        "--seller",
+        default=False,
+        action="store_true",
+        help="download seller picture profile",
+    )
+    args = parser.parse_args()
+    return args
 
 
 if __name__ == "__main__":
