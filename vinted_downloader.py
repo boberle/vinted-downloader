@@ -1,12 +1,15 @@
+from __future__ import annotations
+
 import argparse
 import json
 import random
 import re
 import sys
 import time
+from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, cast, Protocol
 
 import requests
 
@@ -33,40 +36,64 @@ class Summary:
         path.write_text(summary, encoding="utf-8")
 
 
+@dataclass
+class Downloader:
+    client_factory: ClientFactory
+
+    def download(
+        self, item_url: str, download_seller_profile: bool, output_dir: Path
+    ) -> None:
+        item_id = self._get_item_id(item_url)
+        vinted_tld = self._get_vinted_tld(item_url)
+        client = self.client_factory.build(vinted_tld=vinted_tld)
+        details = Details(client.download_item_details(item_id=item_id))
+
+        self._save_json(output_dir / "item.json", details.data)
+        Summary(
+            source=item_url,
+            title=details.title,
+            description=details.description,
+            seller=details.seller,
+            seller_id=details.seller_id,
+            last_logged_in=details.seller_last_logged_in,
+        ).save(output_dir / "item_summary")
+
+        client.download_photos(
+            output_dir, "photo_{index}.jpg", *details.full_size_photo_urls
+        )
+        if download_seller_profile and details.seller_photo_url:
+            client.download_photos(output_dir, "seller.jpg", details.seller_photo_url)
+
+    def _get_vinted_tld(self, item_url: str) -> str:
+        match = re.search(r"(?<=\.)[a-z.]+(?=/)", item_url)
+        if match is None:
+            raise RuntimeError("Unable to find vinted tld")
+        vinted_tld = match.group(0)
+        return vinted_tld
+
+    def _get_item_id(self, item_url: str) -> int:
+        match = re.search(r"(?<=/)\d+(?=-)", item_url)
+        if match is None:
+            raise RuntimeError("Unable to find item_url")
+        item_id = int(match.group(0))
+        return item_id
+
+    def _save_json(self, path: Path, data: dict[str, Any]) -> None:
+        json.dump(data, path.open("w", encoding="utf-8"), indent=2)
+
+
 def main() -> int:
     args = parse_args()
     item_url: str = args.item_url
     download_seller_profile: bool = args.seller
     output_dir: Path = Path(args.output_dir)
 
-    match = re.search(r"(?<=/)\d+(?=-)", item_url)
-    if match is None:
-        raise RuntimeError("Unable to find item_url")
-    item_id = int(match.group(0))
-
-    match = re.search(r"(?<=\.)[a-z.]+(?=/)", item_url)
-    if match is None:
-        raise RuntimeError("Unable to find vinted tld")
-    vinted_tld = match.group(0)
-
-    client = VintedClient(vinted_tld=vinted_tld)
-    details = Details(client.download_item_details(item_id=item_id))
-
-    save_json(output_dir / "item.json", details.data)
-    Summary(
-        source=item_url,
-        title=details.title,
-        description=details.description,
-        seller=details.seller,
-        seller_id=details.seller_id,
-        last_logged_in=details.seller_last_logged_in,
-    ).save(output_dir / "item_summary")
-
-    download_photos(
-        output_dir, "photo_{index}.jpg", client, *details.full_size_photo_urls
+    downloader = Downloader(client_factory=VintedClientFactory())
+    downloader.download(
+        item_url=item_url,
+        download_seller_profile=download_seller_profile,
+        output_dir=output_dir,
     )
-    if download_seller_profile and details.seller_photo_url:
-        download_photos(output_dir, "seller.jpg", client, details.seller_photo_url)
 
     return 0
 
@@ -92,6 +119,16 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
+class Client(Protocol):
+    @abstractmethod
+    def download_item_details(self, item_id: int) -> dict[str, Any]:
+        ...
+
+    @abstractmethod
+    def download_photos(self, output_dir: Path, template_name: str, *urls: str) -> None:
+        ...
+
+
 @dataclass
 class VintedClient:
     vinted_tld: str
@@ -114,28 +151,34 @@ class VintedClient:
         data = cast(dict[str, Any], self.session.get(url).json())
         return data
 
-    def download_resource(self, url: str) -> bytes:
+    def _snap(self) -> None:
+        if self.snap is not None and len(self.snap):
+            time.sleep(random.choice(self.snap))
+
+    def download_photos(self, output_dir: Path, template_name: str, *urls: str) -> None:
+        for i, url in enumerate(urls):
+            data = self._download_resource(url)
+            fn = template_name.format(index=i)
+            (output_dir / fn).write_bytes(data)
+
+    def _download_resource(self, url: str) -> bytes:
         self._snap()
         print("downloading resource from '%s'" % url)
         resource = self.session.get(url).content
         return resource
 
-    def _snap(self) -> None:
-        if self.snap is not None and len(self.snap):
-            time.sleep(random.choice(self.snap))
+
+class ClientFactory(Protocol):
+    @staticmethod
+    @abstractmethod
+    def build(vinted_tld: str) -> Client:
+        ...
 
 
-def download_photos(
-    output_dir: Path, template_name: str, client: VintedClient, *urls: str
-) -> None:
-    for i, url in enumerate(urls):
-        data = client.download_resource(url)
-        fn = template_name.format(index=i)
-        (output_dir / fn).write_bytes(data)
-
-
-def save_json(path: Path, data: dict[str, Any]) -> None:
-    json.dump(data, path.open("w", encoding="utf-8"), indent=2)
+class VintedClientFactory(ClientFactory):
+    @staticmethod
+    def build(vinted_tld: str) -> VintedClient:
+        return VintedClient(vinted_tld=vinted_tld)
 
 
 @dataclass
