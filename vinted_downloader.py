@@ -44,7 +44,12 @@ def main() -> int:
         raise RuntimeError("Unable to find item_url")
     item_id = int(match.group(0))
 
-    client = VintedClient()
+    match = re.search(r"(?<=\.)[a-z.]+(?=/)", item_url)
+    if match is None:
+        raise RuntimeError("Unable to find vinted tld")
+    vinted_tld = match.group(0)
+
+    client = VintedClient(vinted_tld=vinted_tld)
     details = Details(client.download_item_details(item_id=item_id))
 
     save_json(output_dir / "item.json", details.data)
@@ -89,6 +94,7 @@ def parse_args() -> argparse.Namespace:
 
 @dataclass
 class VintedClient:
+    vinted_tld: str
     snap: list[int] | None = field(default_factory=lambda: SNAP)
 
     def __post_init__(self) -> None:
@@ -99,11 +105,11 @@ class VintedClient:
         self.session = requests.Session()
         self.session.headers.update(headers)
         # connect the first time to Vinted to get the anonymous cookie auth
-        self.session.get("https://www.vinted.fr")
+        self.session.get(f"https://www.vinted.{self.vinted_tld}")
 
     def download_item_details(self, item_id: int) -> dict[str, Any]:
         self._snap()
-        url = f"https://www.vinted.fr/api/v2/items/{item_id}?localize=false"
+        url = f"https://www.vinted.{self.vinted_tld}/api/v2/items/{item_id}?localize=false"
         print("downloading details from '%s'" % url)
         data = cast(dict[str, Any], self.session.get(url).json())
         return data
