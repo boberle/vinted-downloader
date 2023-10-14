@@ -113,7 +113,7 @@ class VintedClient(Client):
 
     def __post_init__(self) -> None:
         headers = {
-            "User-Agent": "My User Agent 1.0",
+            "User-Agent": USER_AGENT,
             "Accept-Language": "fr-FR,fr;q=0.5",
         }
         self.session = requests.Session()
