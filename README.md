@@ -1,8 +1,8 @@
 # Vinted Product Downloader
 
-Vinted is a website to buy and sell second-hand clothes available in several countries in Europe.  Sometimes it's useful to download the photographs of an article, for example if you buy a product that you want to later resell on the platform and you don't want to take the photographs again.
+Vinted is a website to buy and sell second-hand clothes available in several countries in Europe.  Sometimes it's useful to download the photographs of an article.
 
-At the time of writing (August the 6th, 2023), scrapping information from the Vinted website is really easy (it used to be a lot harder).  You can find all the details below. It is so easy that you can download all the photographs in full size with one command line, without even needing python or any programming language.
+At the time of writing (October the 14th, 2023), scrapping information from the Vinted website is somewhat easy.  You can find all the details below. You can download all the photographs with a small bash script, without even needing python.
 
 But if you want more information (not just the photographs) or don't know how to pipe commands on the command line, here is a python script that will:
 
@@ -25,18 +25,18 @@ Then you get the following files:
 - `photo_01.jpg`: all the photos for the item
 - `seller.jpg`: with the `--seller` option
 
+Use the `-o` option to specify an output directory.
+
 
 ## How does it work?
 
-First download the raw html found at the product url, for example `https://www.vinted.fr/CATEGORY/SUBCATEGORY/.../PRODUCT_ID-SLUG`
+All the item information is in a JSON file downloaded alongside the HTML file. The product id is found in the url of an item: `https://www.vinted.TLD/items/ITEM_ID-slug`.
 
-By reading the code, you will find interesting json document inside `<script type="application/json" class="js-react-on-rails-component" data-component-name="NAME">` tags.
+Once you got the item id you just need to download the JSON file at `https://www.vinted.TLD/api/v2/items/ITEM_ID?localize=false`.
 
-The name `NAME` of these tags are things like `Header`, `Advertisement`, `ItemPhotoGrid`, `InfoBanner`... We are interested in `ItemDetails` (which contains the json contained in `ItemPhotoGrid`, `ItemDescription` and `ItemUserInfo`).
+If you download it with curl, for example, you will get an "unauthorized" error. You need to connect first to an HTML page (eg the vinted home page, with the same TLD of the product page) to get the authentication cookies (even if it's an anonymous authentication) and then reuse them. This is why the bash script below uses 2 `curl` commands.
 
-So we just use `BeautifulSoup` to extract to find and extract the tag `<script type="application/json" class="js-react-on-rails-component" data-component-name="ItemDetails">`, and read the json inside.
-
-The interesting parts of the json are the following ones (using `jq` format):
+The interesting parts of the JSON are the following ones (using `jq` format):
 
 ```
 cat itemdetails.json | jq ".item.title"
@@ -49,19 +49,69 @@ cat itemdetails.json | jq ".item.user.photo.full_size_url"
 
 But you can find a lot more information in the json (the price, if the item is reserved, hidden, etc.), really everything that is displayed on the page, and even more.
 
-So, if you want to download the photos in the original size using only the command line (I'm assuming you are using Linux or Mac, if you made it so far):
+So, if you want to download the photos in the original size using only a bash script:
 
 ```bash
-curl "https://PRODUCT_URL" | perl -ne 'm/(?<=data-component-name="ItemDetails").+?(\{.+?\})(?=<\/script>)/ && print "$1"' | jq -r ".item.photos[] | .full_size_url" | xargs wget
+url=$1
+
+item_id=`echo "$url" | grep -oP "(?<=/)\d+(?=-)"`
+
+curl \
+-H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+-H "Accept-Encoding: gzip, deflate, br" \
+-H "Accept-Language: fr-FR,fr;q=0.5" \
+-H "Connection: keep-alive" \
+-H "Sec-Fetch-Dest: document" \
+-H "Sec-Fetch-Mode: navigate" \
+-H "Sec-Fetch-Site: cross-site" \
+-H "TE: trailers" \
+-H "Upgrade-Insecure-Requests: 1" \
+-H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0" \
+--cookie-jar "vinted_cookies.txt" \
+--output vinted_home.out \
+"https://www.vinted.fr"
+
+curl \
+-H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+-H "Accept-Encoding: gzip, deflate, br" \
+-H "Accept-Language: fr-FR,fr;q=0.5" \
+-H "Connection: keep-alive" \
+-H "Sec-Fetch-Dest: document" \
+-H "Sec-Fetch-Mode: navigate" \
+-H "Sec-Fetch-Site: cross-site" \
+-H "TE: trailers" \
+-H "Upgrade-Insecure-Requests: 1" \
+-H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0" \
+--cookie "vinted_cookies.txt" \
+--output vinted_item.out \
+"https://www.vinted.fr/api/v2/items/$item_id?localize=false"
+
+count=0
+for photo_url in `cat vinted_item.out | gzip -d | jq -r ".item.photos[] | .full_size_url"`
+do
+   curl \
+   -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
+   -H "Accept-Encoding: gzip, deflate, br" \
+   -H "Accept-Language: fr-FR,fr;q=0.5" \
+   -H "Connection: keep-alive" \
+   -H "Sec-Fetch-Dest: document" \
+   -H "Sec-Fetch-Mode: navigate" \
+   -H "Sec-Fetch-Site: cross-site" \
+   -H "Upgrade-Insecure-Requests: 1" \
+   -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0" \
+   --output "vinted_photo_$count.jpg" \
+   $photo_url
+   ((count++)) || true
+done
 ```
 
-Explanation:
+Just save it in a file `download_full_size_images.sh` and call it with:
 
-- `curl` will download the html
-- `perl` wil extract the json by look at the correct tag in the html code
-- `jq` will extract the photo urls (full size)
-- `wget` will download all the photos
+```bash
+bash -e -x download_full_size_images.sh URL_OF_THE_ITEM
+```
 
+(adapt the TLD in the script to the TLD of your item)
 
 ## Version
 
