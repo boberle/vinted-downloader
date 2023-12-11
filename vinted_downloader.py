@@ -42,9 +42,9 @@ class Downloader:
     writer: Writer
 
     def download(
-        self,
-        item_url: str,
-        download_seller_profile: bool,
+            self,
+            item_url: str,
+            download_seller_profile: bool, _all,
     ) -> None:
         item_id = self._get_item_id(item_url)
         vinted_tld = self._get_vinted_tld(item_url)
@@ -62,10 +62,24 @@ class Downloader:
         )
         self.writer.write_text(Path("item_summary"), str(summary))
 
-        for i, photo_bytes in enumerate(
-            client.download_photos(*details.full_size_photo_urls)
-        ):
-            self.writer.write_bytes(Path(f"photo_{i}.jpg"), photo_bytes)
+        if _all:
+            items_id = []
+            data = client.download_items_details(details.seller_id)
+
+            for item in data["items"]:
+                items_id.append(item["id"])
+
+            for item_id in items_id:
+                details = Details(client.download_item_details(item_id=item_id))
+                for i, photo_bytes in enumerate(
+                        client.download_photos(*details.full_size_photo_urls)
+                ):
+                    self.writer.write_bytes(Path(f"photo_{i}_{item_id}.jpg"), photo_bytes)
+        else:
+            for i, photo_bytes in enumerate(
+                    client.download_photos(*details.full_size_photo_urls)
+            ):
+                self.writer.write_bytes(Path(f"photo_{i}.jpg"), photo_bytes)
 
         if download_seller_profile and details.seller_photo_url:
             photo_bytes = client.download_photo(details.seller_photo_url)
@@ -98,6 +112,10 @@ class Client(Protocol):
         ...
 
     @abstractmethod
+    def download_items_details(self, profile_id: int) -> dict[str, Any]:
+        ...
+
+    @abstractmethod
     def download_photos(self, *urls: str) -> Generator[bytes, None, None]:
         ...
 
@@ -125,6 +143,12 @@ class VintedClient(Client):
         self._snap()
         url = f"https://www.vinted.{self.vinted_tld}/api/v2/items/{item_id}?localize=false"
         print("downloading details from '%s'" % url)
+        data = cast(dict[str, Any], self.session.get(url).json())
+        return data
+
+    def download_items_details(self, profile_id: int) -> dict[str, Any]:
+        self._snap()
+        url = f"https://www.vinted.{self.vinted_tld}/api/v2/users/{profile_id}/items?localize=false"  # https://www.vinted.fr/api/v2/users/88485782/items?page=1&per_page=20&order=relevance
         data = cast(dict[str, Any], self.session.get(url).json())
         return data
 
@@ -232,6 +256,7 @@ def main() -> int:
     downloader.download(
         item_url=item_url,
         download_seller_profile=download_seller_profile,
+        _all=args.all
     )
 
     return 0
@@ -253,6 +278,12 @@ def parse_args() -> argparse.Namespace:
         default=False,
         action="store_true",
         help="download seller picture profile",
+    )
+    parser.add_argument(
+        "--all",
+        default=False,
+        action="store_true",
+        help="download all seller items",
     )
     args = parser.parse_args()
     return args
