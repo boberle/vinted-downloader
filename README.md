@@ -16,6 +16,8 @@ It is working like this:
 python3 vinted_downloader.py "PRODUCT_URL"
 # or, to also download the seller profile:
 python3 vinted_downloader.py --seller "PRODUCT_URL"
+# or, to also download all items available on the seller profile:
+python3 vinted_downloader.py --all "PRODUCT_URL"
 ```
 
 Then you get the following files:
