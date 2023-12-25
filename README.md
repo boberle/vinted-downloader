@@ -29,6 +29,10 @@ Then you get the following files:
 
 Use the `-o` option to specify an output directory.
 
+If the item is sold, then go to the url will redirect to the category,
+not the item, except if you are logged in. To avoid that, add
+`?noredirect=1` at the end of the url.
+
 
 ## How does it work?
 
