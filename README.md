@@ -45,6 +45,8 @@ vinted-downloader --all "PRODUCT_URL"
 
 ### With `pip`
 
+#### On Linux or MacOS
+
 The Vinted product download is on PyPI, so you can run:
 
 ```bash
@@ -64,6 +66,43 @@ or, if you prefer to use python:
 ```bash
 python3 -m vinted_downloader [--seller] [-o DIR] [--all] "PRODUCT_URL"
 ```
+
+To update the package, run:
+
+```bash
+pip3 install --upgrade vinted-downloader
+```
+
+
+#### On Windows
+
+First you need to install Python:
+
+- go to https://www.python.org/downloads/
+- download the installer "Python for Windows"
+- run the installer (click on the downloaded file)
+   - check the box "Add python.exe to PATH" (this is **VERY IMPORTANT**, see the image below)
+   - click on "Install Now"
+
+<img src="docs/img/screenshot_windows_install_python.png" />
+
+Then open the Command Prompt (type "prompt" in the search bar at the bottom of the screen):
+
+- type `python --version` to check that Python is correctly installed (you should see the version of Python, and not an error message)
+- type `pip install vinted-downloader`. This will install the downloader and its dependencies
+
+<img src="docs/img/screenshot_windows_install_vinted_downloader.png" />
+
+
+Then use it, like described above. For example:
+
+```bash
+vinted-downloader "PRODUCT_URL"
+vinted-downloader --seller "PRODUCT_URL"
+vinted-downloader --all "PRODUCT_URL"
+```
+
+<img src="docs/img/screenshot_windows_run_vinted_downloader.png" />
 
 
 ### From the sources
