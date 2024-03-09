@@ -29,9 +29,63 @@ Then you get the following files:
 
 Use the `-o` option to specify an output directory.
 
-If the item is sold, then go to the url will redirect to the category,
-not the item, except if you are logged in. To avoid that, add
-`?noredirect=1` at the end of the url.
+If the item is sold, then go to the url will redirect to the category, not the item, except if you are logged in. To avoid that, add `?noredirect=1` at the end of the url.
+
+If you have installed it with `pip`, you can also use the `vinted-downloader` command:
+
+```bash
+vinted-downloader "PRODUCT_URL"
+vinted-downloader --seller "PRODUCT_URL"
+vinted-downloader --all "PRODUCT_URL"
+```
+
+
+## How to install?
+
+
+### With `pip`
+
+The Vinted product download is on PyPI, so you can run:
+
+```bash
+pip3 install vinted-downloader
+```
+
+All dependencies are installed automatically.
+
+You can then use the command `vinted-downloader` like this:
+
+```bash
+vinted-downloader [--seller] [-o DIR] [--all] "PRODUCT_URL"
+```
+
+or, if you prefer to use python:
+
+```bash
+python3 -m vinted_downloader [--seller] [-o DIR] [--all] "PRODUCT_URL"
+```
+
+
+### From the sources
+
+Clone the github repository and install the dependencies.
+
+For Linux and MacOS:
+
+
+```bash
+# clone:
+git clone https://github.com/boberle/vinted-downloader.git
+
+# install deps:
+cd vinted-downloader
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# use:
+python3 vinted_downloader.py "PRODUCT_URL"
+```
 
 
 ## How does it work?
