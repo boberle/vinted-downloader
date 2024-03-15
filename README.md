@@ -105,6 +105,13 @@ vinted-downloader --all "PRODUCT_URL"
 <img src="docs/img/screenshot_windows_run_vinted_downloader.png" />
 
 
+If the command `vinted-downloader` doesn't work, use:
+
+```bash
+python -m vinted_downloader "PRODUCT_URL"
+```
+
+
 ### From the sources
 
 Clone the github repository and install the dependencies.
