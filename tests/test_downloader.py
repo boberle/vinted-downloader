@@ -81,6 +81,7 @@ def test_downloader_download(json_data_1: dict[str, Any]) -> None:
     downloader.download(
         item_url="https://www.vinted.fr/items/123456-foobar?referrer=catalog",
         download_seller_profile=True,
+        download_all_seller_items=False,
     )
 
     summary = """source: https://www.vinted.fr/items/123456-foobar?referrer=catalog

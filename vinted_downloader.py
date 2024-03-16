@@ -42,9 +42,10 @@ class Downloader:
     writer: Writer
 
     def download(
-            self,
-            item_url: str,
-            download_seller_profile: bool, _all,
+        self,
+        item_url: str,
+        download_seller_profile: bool,
+        download_all_seller_items: bool,
     ) -> None:
         item_id = self._get_item_id(item_url)
         vinted_tld = self._get_vinted_tld(item_url)
@@ -62,7 +63,7 @@ class Downloader:
         )
         self.writer.write_text(Path("item_summary"), str(summary))
 
-        if _all:
+        if download_all_seller_items:
             items_id = []
             data = client.download_items_details(details.seller_id)
 
@@ -256,7 +257,7 @@ def main() -> int:
     downloader.download(
         item_url=item_url,
         download_seller_profile=download_seller_profile,
-        _all=args.all
+        download_all_seller_items=args.all,
     )
 
     return 0
