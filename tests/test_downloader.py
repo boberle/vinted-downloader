@@ -5,7 +5,12 @@ from typing import Any, cast
 import pytest
 
 from conftest import TestWriter, TestClientFactory
-from vinted_downloader import Downloader, Details
+from vinted_downloader import (
+    Downloader,
+    Details,
+    extract_item_slug_from_url,
+    FileWriter,
+)
 
 
 @pytest.mark.parametrize(
@@ -134,3 +139,28 @@ def test_details(json_data_1: dict[str, Any]) -> None:
         "https://images1.vinted.net/tc/123.jpeg?s=1a2b9",
         "https://images1.vinted.net/tc/123.jpeg?s=1a2b10",
     ]
+
+
+@pytest.mark.parametrize(
+    "url,slug",
+    [
+        (
+            "https://www.vinted.fr/items/1234567890-foo-bar?noredirect=1",
+            "1234567890-foo-bar",
+        ),
+        ("https://www.vinted.fr/items/1234567890-foo-bar", "1234567890-foo-bar"),
+    ],
+)
+def test_extract_item_slug_from_url(url: str, slug: str) -> None:
+    assert extract_item_slug_from_url(url) == slug
+
+
+def test_file_writer_writes_in_subdir(tmp_path: Path) -> None:
+    url = "https://www.vinted.fr/items/1234567890-foo-bar"
+    path = tmp_path / "output" / extract_item_slug_from_url(url)
+    writer = FileWriter(path)
+    content = b"hello"
+    writer.write_bytes(Path("photo_0.jpg"), content)
+    assert (
+        tmp_path / "output" / "1234567890-foo-bar" / "photo_0.jpg"
+    ).read_bytes() == content

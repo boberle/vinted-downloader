@@ -10,6 +10,7 @@ from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast, Protocol, Generator
+from urllib.parse import urlparse
 
 import requests
 
@@ -199,10 +200,15 @@ class FileWriter(Writer):
     output_dir: Path
 
     def write_text(self, file: Path, data: str) -> None:
+        self._create()
         (self.output_dir / file).write_text(data, encoding="utf-8")
 
     def write_bytes(self, file: Path, data: bytes) -> None:
+        self._create()
         (self.output_dir / file).write_bytes(data)
+
+    def _create(self) -> None:
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
 @dataclass
@@ -253,6 +259,10 @@ def main() -> int:
     download_seller_profile: bool = args.seller
     output_dir: Path = Path(args.output_dir)
 
+    if args.save_in_dir:
+        subdir_name = extract_item_slug_from_url(item_url)
+        output_dir /= subdir_name
+
     downloader = Downloader(
         client_factory=VintedClientFactory(), writer=FileWriter(output_dir=output_dir)
     )
@@ -288,8 +298,22 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="download all seller items",
     )
+    parser.add_argument(
+        "--save-in-dir",
+        default=False,
+        action="store_true",
+        help=(
+            "save files in a subdirectory of the `-o` option directory. "
+            "The subdirectory is named with the item title and id"
+        ),
+    )
     args = parser.parse_args()
     return args
+
+
+def extract_item_slug_from_url(url: str) -> str:
+    parsed = urlparse(url)
+    return Path(parsed.path).name
 
 
 if __name__ == "__main__":

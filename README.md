@@ -27,7 +27,13 @@ Then you get the following files:
 - `photo_01.jpg`: all the photos for the item
 - `seller.jpg`: with the `--seller` option
 
-Use the `-o` option to specify an output directory.
+Use the `-o` option to specify an output directory (default is current directory).  If it doesn't exist, it will be created. If you want to save the files in a subdirectory of the `-o` directory automatically named after the item id and title, then use the `--save-in-dir` option.  For example, to automatically create and save in the `my-output/1234-item-title/` directory, run:
+
+```bash
+python3 vinted_downloader.py -o my-output --save-in-dir "https://www.vinted.fr/items/1234-item-title"
+```
+
+If you omit the `-o` option, it will be saved in a subdirectory of the current directory, namely `./1234-item-title/`.
 
 If the item is sold, then go to the url will redirect to the category, not the item, except if you are logged in. To avoid that, add `?noredirect=1` at the end of the url.
 
