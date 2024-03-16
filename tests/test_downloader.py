@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from tests.conftest import TestWriter, TestClientFactory
+from conftest import TestWriter, TestClientFactory
 from vinted_downloader import Downloader, Details
 
 

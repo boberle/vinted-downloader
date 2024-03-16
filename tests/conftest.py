@@ -14,6 +14,9 @@ class TestClient(Client):
     def download_item_details(self, item_id: int) -> dict[str, Any]:
         return self.details[item_id]
 
+    def download_items_details(self, profile_id: int) -> dict[str, Any]:
+        raise NotImplementedError
+
     def download_photos(self, *urls: str) -> Generator[bytes, None, None]:
         for url in urls:
             yield self.download_photo(url)
