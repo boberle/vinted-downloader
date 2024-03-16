@@ -111,6 +111,12 @@ If the command `vinted-downloader` doesn't work, use:
 python -m vinted_downloader "PRODUCT_URL"
 ```
 
+To update, run:
+
+```bash
+pip install --upgrade vinted-downloader
+```
+
 
 ### From the sources
 
