@@ -73,12 +73,14 @@ class Downloader:
             for item_id in items_id:
                 details = Details(client.download_item_details(item_id=item_id))
                 for i, photo_bytes in enumerate(
-                        client.download_photos(*details.full_size_photo_urls)
+                    client.download_photos(*details.full_size_photo_urls)
                 ):
-                    self.writer.write_bytes(Path(f"photo_{i}_{item_id}.jpg"), photo_bytes)
+                    self.writer.write_bytes(
+                        Path(f"photo_{i}_{item_id}.jpg"), photo_bytes
+                    )
         else:
             for i, photo_bytes in enumerate(
-                    client.download_photos(*details.full_size_photo_urls)
+                client.download_photos(*details.full_size_photo_urls)
             ):
                 self.writer.write_bytes(Path(f"photo_{i}.jpg"), photo_bytes)
 
