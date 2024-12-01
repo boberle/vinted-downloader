@@ -147,8 +147,20 @@ class VintedClient(Client):
         self._snap()
         url = f"https://www.vinted.{self.vinted_tld}/api/v2/items/{item_id}?localize=false"
         print("downloading details from '%s'" % url)
-        data = cast(dict[str, Any], self.session.get(url).json())
-        return data
+        response = self.session.get(url)
+        try:
+            return cast(dict[str, Any], response.json())
+        except json.JSONDecodeError:
+            open("vinted_product_downloader_error.txt", "wb").write(response.content)
+            print(
+                "=========\n"
+                "An error occurred while decoding the product details.\n"
+                "The content of the response has been saved in vinted_product_downloader_error.txt.\n"
+                "You can review the file, or send it to the developers at contact@boberle.com\n"
+                "for further assistance.\n"
+                "========="
+            )
+            sys.exit(1)
 
     def download_items_details(self, profile_id: int) -> dict[str, Any]:
         self._snap()
