@@ -46,6 +46,11 @@ vinted-downloader --all "PRODUCT_URL"
 ```
 
 
+## Firefox extension
+
+Note that I developed a new Firefox extension to download the same data (except the seller json and profile picture), and, in addition, conversations with images. You can found it at the [Firefox add-ons store](https://addons.mozilla.org/en-US/firefox/addon/vinted-photo-data-downloader/), and the source code is available on [Github](https://github.com/boberle/vinted-downloader-firefox-addon).
+
+
 ## How to install?
 
 
