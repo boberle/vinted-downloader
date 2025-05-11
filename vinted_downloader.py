@@ -51,7 +51,7 @@ class Downloader:
         item_id = self._get_item_id(item_url)
         vinted_tld = self._get_vinted_tld(item_url)
         client = self.client_factory.build(vinted_tld=vinted_tld)
-        details = Details(client.download_item_details(item_id=item_id))
+        details = Details(client.download_item_details(item_url=item_url))
 
         self.writer.write_text(Path("item.json"), json.dumps(details.data))
         summary = Summary(
@@ -72,7 +72,7 @@ class Downloader:
                 items_id.append(item["id"])
 
             for item_id in items_id:
-                details = Details(client.download_item_details(item_id=item_id))
+                details = Details(client.download_item_details(item_url=item_url))
                 for i, photo_bytes in enumerate(
                     client.download_photos(*details.full_size_photo_urls)
                 ):
@@ -112,7 +112,7 @@ class Downloader:
 
 class Client(Protocol):
     @abstractmethod
-    def download_item_details(self, item_id: int) -> dict[str, Any]:
+    def download_item_details(self, item_url: str) -> dict[str, Any]:
         ...
 
     @abstractmethod
@@ -143,13 +143,15 @@ class VintedClient(Client):
         # connect the first time to Vinted to get the anonymous cookie auth
         self.session.get(f"https://www.vinted.{self.vinted_tld}")
 
-    def download_item_details(self, item_id: int) -> dict[str, Any]:
+    def download_item_details(self, item_url: str) -> dict[str, Any]:
         self._snap()
-        url = f"https://www.vinted.{self.vinted_tld}/api/v2/items/{item_id}?localize=false"
-        print("downloading details from '%s'" % url)
-        response = self.session.get(url)
+        print("downloading details from '%s'" % item_url)
+        response = self.session.get(item_url)
         try:
-            return cast(dict[str, Any], response.json())
+            data = extract_details_from_html(response.text)
+            if data is None:
+                raise ValueError("Unable to extract product details from the HTML")
+            return data
         except json.JSONDecodeError:
             open("vinted_product_downloader_error.txt", "wb").write(response.content)
             print(
@@ -229,36 +231,36 @@ class Details:
 
     @property
     def title(self) -> str:
-        return str(self.data["item"]["title"])
+        return str(self.data["title"])
 
     @property
     def description(self) -> str:
-        return str(self.data["item"]["description"])
+        return str(self.data["description"])
 
     @property
     def seller(self) -> str:
-        return str(self.data["item"]["user"]["login"])
+        return str(self.data["user"]["login"])
 
     @property
     def seller_id(self) -> int:
-        return cast(int, self.data["item"]["user"]["id"])
+        return cast(int, self.data["user"]["id"])
 
     @property
     def seller_last_logged_in(self) -> str:
         # some typo in the json key...
         return str(
-            self.data["item"]["user"].get("last_logged_on_ts")
-            or self.data["item"]["user"]["last_loged_on_ts"]
+            self.data["user"].get("last_logged_on_ts")
+            or self.data["user"]["last_loged_on_ts"]
         )
 
     @property
     def full_size_photo_urls(self) -> list[str]:
-        return [photo["full_size_url"] for photo in self.data["item"]["photos"]]
+        return [photo["full_size_url"] for photo in self.data["photos"]]
 
     @property
     def seller_photo_url(self) -> str | None:
         try:
-            url = self.data["item"]["user"]["photo"]["full_size_url"]
+            url = self.data["user"]["photo"]["full_size_url"]
         except (KeyError, TypeError):
             return None
         else:
@@ -285,6 +287,35 @@ def main() -> int:
     )
 
     return 0
+
+
+def extract_details_from_html(html_content: str) -> dict[str, Any] | None:
+    def extract_item_dto_data(html: str) -> str | None:
+        regex = r'<script\b[^>]*>self\.__next_f\.push\((.*?)\)<\/script>'
+        matches = re.finditer(regex, html, re.DOTALL)
+
+        for match in matches:
+            content = match.group(1)
+            if "itemDto" in content:
+                return content
+        return None
+
+    array_str = extract_item_dto_data(html_content)
+    if array_str is None:
+        return None
+
+    array = json.loads(array_str)
+    json_data = None
+    for item in array:
+        if isinstance(item, str) and item.startswith("b:"):
+            json_data = json.loads(item[2:])
+            break
+
+    if json_data:
+        data = json_data[0][3]["itemDto"]
+        assert isinstance(data, dict)
+        return data
+    return None
 
 
 def parse_args() -> argparse.Namespace:
