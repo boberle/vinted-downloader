@@ -122,7 +122,7 @@ class Client(Protocol):
 @dataclass
 class VintedClient(Client):
     vinted_tld: str
-    snap: list[int] | None = field(default_factory=lambda: SNAP)
+    nap: list[int] | None = field(default_factory=lambda: SNAP)
 
     def __post_init__(self) -> None:
         headers = {
@@ -135,7 +135,7 @@ class VintedClient(Client):
         self.session.get(f"https://www.vinted.{self.vinted_tld}")
 
     def download_item_details(self, item_url: str) -> dict[str, Any]:
-        self._snap()
+        self._nap()
         print("downloading details from '%s'" % item_url)
         response = self.session.get(item_url)
         try:
@@ -156,14 +156,14 @@ class VintedClient(Client):
             sys.exit(1)
 
     def download_items_details(self, profile_id: int) -> dict[str, Any]:
-        self._snap()
+        self._nap()
         url = f"https://www.vinted.{self.vinted_tld}/api/v2/users/{profile_id}/items?localize=false"  # https://www.vinted.fr/api/v2/users/88485782/items?page=1&per_page=20&order=relevance
         data = cast(dict[str, Any], self.session.get(url).json())
         return data
 
-    def _snap(self) -> None:
-        if self.snap is not None and len(self.snap):
-            time.sleep(random.choice(self.snap))
+    def _nap(self) -> None:
+        if self.nap is not None and len(self.nap):
+            time.sleep(random.choice(self.nap))
 
     def download_photos(self, *urls: str) -> Generator[bytes, None, None]:
         for url in urls:
@@ -173,7 +173,7 @@ class VintedClient(Client):
         return self._download_resource(url)
 
     def _download_resource(self, url: str) -> bytes:
-        self._snap()
+        self._nap()
         print("downloading resource from '%s'" % url)
         resource = self.session.get(url).content
         return resource
