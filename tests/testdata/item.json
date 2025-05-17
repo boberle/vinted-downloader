@@ -1,47 +1,45 @@
 {
-  "item": {
-    "id": 123456,
-    "title": "The title",
-    "description": "The description\nAnother line",
-    "photos": [
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b1"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b2"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b3"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b4"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b5"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b6"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b7"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b8"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b9"
-      },
-      {
-        "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b10"
-      }
-    ],
-    "user": {
-      "id": 654321,
-      "login": "me",
-      "last_loged_on_ts": "2023-10-12T19:28:44+01:00",
-      "photo": {
-        "full_size_url": "https://images1.vinted.net/tc/321.jpeg?s=3c4d"
-      }
+  "id": 123456,
+  "title": "The title",
+  "description": "The description\nAnother line",
+  "photos": [
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b1"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b2"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b3"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b4"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b5"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b6"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b7"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b8"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b9"
+    },
+    {
+      "full_size_url": "https://images1.vinted.net/tc/123.jpeg?s=1a2b10"
+    }
+  ],
+  "user": {
+    "id": 654321,
+    "login": "me",
+    "last_loged_on_ts": "2023-10-12T19:28:44+01:00",
+    "photo": {
+      "full_size_url": "https://images1.vinted.net/tc/321.jpeg?s=3c4d"
     }
   }
 }

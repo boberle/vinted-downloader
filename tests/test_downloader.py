@@ -11,6 +11,7 @@ from vinted_downloader import (
     extract_item_slug_from_url,
     FileWriter,
     get_item_id,
+    extract_details_from_html,
 )
 
 
@@ -165,3 +166,23 @@ def test_file_writer_writes_in_subdir(tmp_path: Path) -> None:
     assert (
         tmp_path / "output" / "1234567890-foo-bar" / "photo_0.jpg"
     ).read_bytes() == content
+
+
+def test_extract_json_data_from_html(testdata_dir: Path) -> None:
+    html = (testdata_dir / "product_page.html").read_text()
+    json_data = extract_details_from_html(html)
+    assert json_data is not None
+    details = Details(json_data)
+    assert details.title == "The title"
+    assert details.description == "The description\nAnother line"
+    assert details.seller == "me"
+    assert details.seller_id == 654321
+    assert details.seller_last_logged_in == "2023-10-12T19:28:44+01:00"
+    assert details.seller_photo_url == "https://images1.vinted.net/tc/321.jpeg?s=3c4d"
+    assert details.full_size_photo_urls == [
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b1",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b2",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b3",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b4",
+        "https://images1.vinted.net/tc/123.jpeg?s=1a2b5",
+    ]
