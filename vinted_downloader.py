@@ -307,8 +307,9 @@ def extract_details_from_html(html_content: str) -> dict[str, Any] | None:
     array = json.loads(array_str)
     json_data = None
     for item in array:
-        if isinstance(item, str) and item.startswith("c:"):
-            json_data = json.loads(item[2:])
+        if isinstance(item, str) and "itemDto" in item:
+            item = re.sub(r'^[a-zA-Z]+:', "", item)
+            json_data = json.loads(item)
             break
 
     if json_data:
