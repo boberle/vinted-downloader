@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Generator
 
-from vinted_downloader import Client, ClientFactory, Writer
+from vinted_downloader import Client, ClientFactory, Writer, get_item_id
 
 
 @dataclass
@@ -11,8 +11,8 @@ class TestClient(Client):
     details: dict[int, dict[str, Any]]
     downloads: dict[str, bytes]
 
-    def download_item_details(self, item_id: int) -> dict[str, Any]:
-        return self.details[item_id]
+    def download_item_details(self, item_url: str) -> dict[str, Any]:
+        return self.details[get_item_id(item_url)]
 
     def download_items_details(self, profile_id: int) -> dict[str, Any]:
         raise NotImplementedError
