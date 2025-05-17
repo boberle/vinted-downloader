@@ -291,7 +291,7 @@ def main() -> int:
 
 def extract_details_from_html(html_content: str) -> dict[str, Any] | None:
     def extract_item_dto_data(html: str) -> str | None:
-        regex = r'<script\b[^>]*>self\.__next_f\.push\((.*?)\)<\/script>'
+        regex = r"<script\b[^>]*>self\.__next_f\.push\((.*?)\)<\/script>"
         matches = re.finditer(regex, html, re.DOTALL)
 
         for match in matches:
@@ -308,7 +308,7 @@ def extract_details_from_html(html_content: str) -> dict[str, Any] | None:
     json_data = None
     for item in array:
         if isinstance(item, str) and "itemDto" in item:
-            item = re.sub(r'^[a-zA-Z]+:', "", item)
+            item = re.sub(r"^[a-zA-Z]+:", "", item)
             json_data = json.loads(item)
             break
 
