@@ -10,6 +10,7 @@ from vinted_downloader import (
     Details,
     extract_item_slug_from_url,
     FileWriter,
+    get_item_id,
 )
 
 
@@ -27,7 +28,7 @@ from vinted_downloader import (
     ],
 )
 def test_downloader_get_item_id(url: str, exp: int) -> None:
-    assert Downloader._get_item_id(url) == exp
+    assert get_item_id(url) == exp
 
 
 @pytest.mark.parametrize(

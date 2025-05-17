@@ -48,7 +48,6 @@ class Downloader:
         download_seller_profile: bool,
         download_all_seller_items: bool,
     ) -> None:
-        item_id = self._get_item_id(item_url)
         vinted_tld = self._get_vinted_tld(item_url)
         client = self.client_factory.build(vinted_tld=vinted_tld)
         details = Details(client.download_item_details(item_url=item_url))
@@ -96,14 +95,6 @@ class Downloader:
             raise RuntimeError("Unable to find vinted tld")
         vinted_tld = match.group(0)
         return vinted_tld
-
-    @staticmethod
-    def _get_item_id(item_url: str) -> int:
-        match = re.search(r"(?<=/)\d+(?=-)", item_url)
-        if match is None:
-            raise RuntimeError("Unable to find item_url")
-        item_id = int(match.group(0))
-        return item_id
 
     @staticmethod
     def _save_json(path: Path, data: dict[str, Any]) -> None:
@@ -317,6 +308,14 @@ def extract_details_from_html(html_content: str) -> dict[str, Any] | None:
         assert isinstance(data, dict)
         return data
     return None
+
+
+def get_item_id(item_url: str) -> int:
+    match = re.search(r"(?<=/)\d+(?=-)", item_url)
+    if match is None:
+        raise RuntimeError("Unable to find item_url")
+    item_id = int(match.group(0))
+    return item_id
 
 
 def parse_args() -> argparse.Namespace:
