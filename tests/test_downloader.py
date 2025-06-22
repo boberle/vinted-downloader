@@ -173,16 +173,14 @@ def test_extract_json_data_from_html(testdata_dir: Path) -> None:
     json_data = extract_details_from_html(html)
     assert json_data is not None
     details = Details(json_data)
-    assert details.title == "The title"
-    assert details.description == "The description\nAnother line"
-    assert details.seller == "me"
-    assert details.seller_id == 654321
-    assert details.seller_last_logged_in == "2023-10-12T19:28:44+01:00"
-    assert details.seller_photo_url == "https://images1.vinted.net/tc/321.jpeg?s=3c4d"
+    assert details.title == "Petit guide Rome"
+    assert details.description == ""
+    assert details.seller == ""
+    assert details.seller_id == 11784912
+    assert details.seller_last_logged_in == ""
+    assert details.seller_photo_url == None
     assert details.full_size_photo_urls == [
-        "https://images1.vinted.net/tc/123.jpeg?s=1a2b1",
-        "https://images1.vinted.net/tc/123.jpeg?s=1a2b2",
-        "https://images1.vinted.net/tc/123.jpeg?s=1a2b3",
-        "https://images1.vinted.net/tc/123.jpeg?s=1a2b4",
-        "https://images1.vinted.net/tc/123.jpeg?s=1a2b5",
+        'https://images1.vinted.net/tc/02_02265_zp7PCmYxR7rsLBJHxKJRdMwV/1750576628.jpeg?s=a1abd08e0a41ccbc8f0477f0d246a40b1494437e',
+        'https://images1.vinted.net/tc/01_01b3c_Jet5hbvy2r38D7b693MtAyfg/1750576628.jpeg?s=7f521a31a5629bf984b57cd1bd5bc3e8ba3c19db',
+        'https://images1.vinted.net/tc/01_00736_icgwK2e37fHS1Ur8XEUMSZAN/1750576628.jpeg?s=54b1f5ccb152540be3476a5f10847a12f5dea53f',
     ]

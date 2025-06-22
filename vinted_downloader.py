@@ -226,23 +226,31 @@ class Details:
 
     @property
     def description(self) -> str:
-        return str(self.data["description"])
+        return str(self.data.get("description", ""))
 
     @property
     def seller(self) -> str:
-        return str(self.data["user"]["login"])
+        try:
+            return str(self.data["user"]["login"])
+        except KeyError:
+            return ""
 
     @property
     def seller_id(self) -> int:
-        return cast(int, self.data["user"]["id"])
+        try:
+            return cast(int, self.data["user"]["id"])
+        except KeyError:
+            return cast(int, self.data["seller_id"])
 
     @property
     def seller_last_logged_in(self) -> str:
-        # some typo in the json key...
-        return str(
-            self.data["user"].get("last_logged_on_ts")
-            or self.data["user"]["last_loged_on_ts"]
-        )
+        try:
+            return str(
+                self.data["user"].get("last_logged_on_ts")
+                or self.data["user"]["last_loged_on_ts"]
+            )
+        except KeyError:
+            return ""
 
     @property
     def full_size_photo_urls(self) -> list[str]:
@@ -262,6 +270,8 @@ def main() -> int:
     args = parse_args()
     item_url: str = args.item_url
     download_seller_profile: bool = args.seller
+    if download_seller_profile:
+        raise RuntimeError("--seller option is disabled for now")
     output_dir: Path = Path(args.output_dir)
 
     if args.save_in_dir:
@@ -281,32 +291,40 @@ def main() -> int:
 
 
 def extract_details_from_html(html_content: str) -> dict[str, Any] | None:
-    def extract_item_dto_data(html: str) -> str | None:
-        regex = r"<script\b[^>]*>self\.__next_f\.push\((.*?)\)<\/script>"
-        matches = re.finditer(regex, html, re.DOTALL)
 
-        for match in matches:
-            content = match.group(1)
-            if "itemDto" in content:
-                return content
+    def get_item_dict(data: dict[str, Any] | list[Any]) -> dict[str, Any] | None:
+        if isinstance(data, dict) and "item" in data:
+            return cast(dict[str, Any], data["item"])
+
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, (dict, list)):
+                    if res := get_item_dict(item):
+                        return res
+        elif isinstance(data, dict):
+            for key, value in data.items():
+                assert not isinstance(key, (dict, list))
+                if isinstance(value, (dict, list)):
+                    if res := get_item_dict(value):
+                        return res
+        else:
+            assert False, "Invalid data type"
         return None
 
-    array_str = extract_item_dto_data(html_content)
-    if array_str is None:
-        return None
-
-    array = json.loads(array_str)
-    json_data = None
-    for item in array:
-        if isinstance(item, str) and "itemDto" in item:
-            item = re.sub(r"^[a-zA-Z]+:", "", item)
-            json_data = json.loads(item)
-            break
-
-    if json_data:
-        data = json_data[0][3]["itemDto"]
-        assert isinstance(data, dict)
-        return data
+    regex = r"<script\b[^>]*>self\.__next_f\.push\((.*?)\)<\/script>"
+    matches = re.finditer(regex, html_content, re.DOTALL)
+    for match in matches:
+        if "full_size_url" not in match.group(1):
+            continue
+        outer_list: list[Any] = json.loads(match.group(1))
+        for outer_item in outer_list:
+            if not isinstance(outer_item, str):
+                continue
+            item, n = re.subn(r"^[a-zA-Z0-9]+:\[", "[", outer_item)
+            if n > 0:
+                found = get_item_dict(json.loads(item))
+                if found:
+                    return found
     return None
 
 
