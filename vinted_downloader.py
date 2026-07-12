@@ -272,18 +272,28 @@ class Details:
 
     @property
     def title(self) -> str:
-        return str(self.data["title"])
+        return str(self.data.get("title", ""))
 
     @property
     def seller(self) -> str:
-        return str(self.data["login"])
+        # Older payloads: user.login or top-level login.
+        # Newer Next.js payloads don't include the seller name at all.
+        user = self.data.get("user")
+        if isinstance(user, dict) and "login" in user:
+            return str(user["login"])
+        return str(self.data.get("login", ""))
 
     @property
     def seller_id(self) -> int:
-        try:
-            return cast(int, self.data["user"]["id"])
-        except KeyError:
-            return cast(int, self.data["seller_id"])
+        # Older payloads: user.id or seller_id.
+        # Newer Next.js payloads only expose ownerId.
+        user = self.data.get("user")
+        if isinstance(user, dict) and "id" in user:
+            return cast(int, user["id"])
+        for key in ("seller_id", "ownerId"):
+            if key in self.data:
+                return cast(int, self.data[key])
+        return 0
 
     @property
     def full_size_photo_urls(self) -> list[str]:
@@ -366,22 +376,27 @@ def extract_details_from_html_with_full_size_url(
     def get_item_dict(
             data: dict[str, Any] | list[Any]
         ) -> dict[str, Any] | None:
-        if isinstance(data, dict) and "value" in data:
-            return cast(dict[str, Any], data["value"])
-
-        if isinstance(data, list):
+        if isinstance(data, dict):
+            # Fast path kept from the original: item wrapped in a
+            # {"value": {...}} node.
+            value = data.get("value")
+            if isinstance(value, dict) and isinstance(
+                value.get("photos"), list
+            ):
+                return value
+            # Newer payloads: the item dict appears directly (e.g. under
+            # a "data" key) - recognize it by shape instead of wrapper.
+            if isinstance(data.get("photos"), list) and "title" in data:
+                return data
+            for child in data.values():
+                if isinstance(child, (dict, list)):
+                    if res := get_item_dict(child):
+                        return res
+        elif isinstance(data, list):
             for item in data:
                 if isinstance(item, (dict, list)):
                     if res := get_item_dict(item):
                         return res
-        elif isinstance(data, dict):
-            for key, value in data.items():
-                assert not isinstance(key, (dict, list))
-                if isinstance(value, (dict, list)):
-                    if res := get_item_dict(value):
-                        return res
-        else:
-            assert False, "Invalid data type"
         return None
 
     regex = r"self\.__next_f\.push\(\[(.*?)\]\)"
