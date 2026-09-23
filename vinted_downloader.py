@@ -72,7 +72,7 @@ class Downloader:
 
                 # Extract photo URLs directly from the API response
                 photo_urls = [
-                    photo["full_size_url"] for photo in item.get("photos", [])
+                    get_photo_url(photo) for photo in item.get("photos", [])
                 ]
 
                 # Get extension from URL
@@ -266,6 +266,12 @@ class FileWriter(Writer):
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
 
+def get_photo_url(photo: dict[str, Any]) -> str:
+    # Older payloads: full_size_url.
+    # Newer Next.js payloads only expose url (the largest available size).
+    return str(photo.get("full_size_url") or photo["url"])
+
+
 @dataclass
 class Details:
     data: dict[str, Any]
@@ -297,7 +303,7 @@ class Details:
 
     @property
     def full_size_photo_urls(self) -> list[str]:
-        return [photo["full_size_url"] for photo in self.data["photos"]]
+        return [get_photo_url(photo) for photo in self.data["photos"]]
 
     @property
     def seller_photo_url(self) -> str | None:
