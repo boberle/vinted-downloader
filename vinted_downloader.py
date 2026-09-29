@@ -194,15 +194,35 @@ class VintedClient(Client):
         url = (
             f"https://www.vinted.{self.vinted_tld}/api/v2/wardrobe/{profile_id}/items"
         )
-        response = self.session.get(
-            url,
-            headers={
-                "Accept": "application/json, text/plain, */*",
-                "X-Requested-With": "XMLHttpRequest",
-                "Referer": f"https://www.vinted.{self.vinted_tld}/member/{profile_id}",
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": f"https://www.vinted.{self.vinted_tld}/member/{profile_id}",
+        }
+        data: dict[str, Any] = {}
+        all_items: list[Any] = []
+        page = 1
+        while True:
+            if page > 1:
+                self._nap()
+            params: dict[str, Any] = {
+                "page": page,
+                "per_page": 96,
+                "order": "relevance",
             }
-        )
-        data = cast(dict[str, Any], response.json())
+            response = self.session.get(url, headers=headers, params=params)
+            data = cast(dict[str, Any], response.json())
+            items = data.get("items", [])
+            all_items.extend(items)
+            pagination = data.get("pagination") or {}
+            total_pages = pagination.get("total_pages")
+            current_page = pagination.get("current_page", page)
+            if not items:
+                break
+            if total_pages is None or current_page >= total_pages:
+                break
+            page += 1
+        data["items"] = all_items
         return data
 
     def _nap(self) -> None:
