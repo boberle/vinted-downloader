@@ -2,15 +2,17 @@
 
 Vinted is a website to buy and sell second-hand clothes available in several countries in Europe.  Sometimes it's useful to download the photographs of an article.
 
-At the time of writing (October the 14th, 2023), scrapping information from the Vinted website is somewhat easy.  You can find all the details below. You can download all the photographs with a small bash script, without even needing Python.
+This Python script downloads the item details and photographs available from a Vinted listing.
 
-But if you want more information (not just the photographs) or don't know how to pipe commands on the command line, here is a Python script that will:
+- Extract item details from supported older page formats and current server-rendered HTML / Next.js data.
+- Prefer photo `full_size_url` values when supplied in the item data or found through the seller's wardrobe API.
+- Fall back to the photo URLs available in the listing page when full-size URLs cannot be retrieved. These may be resized images, commonly using the `f800` rendition.
+- Download the seller's profile picture with `--seller`.
+- Download the seller's available wardrobe items with `--all-items`.
 
-- Download and extract the details about a Vinted product. This json contains all the information available for the product, the user, the photographs, etc.
-- Download all the photographs of the product in full resolution.
-- Download the profile picture of the seller (with the `--seller` option).
+Full-resolution downloads are not guaranteed. A `full_size_url` identifies the image Vinted supplies through that field; it does not guarantee a particular pixel size or the seller's unmodified camera original. The script does not upscale or re-encode images.
 
-It is working like this:
+## Usage
 
 ```bash
 # Download item pictures to current directory
@@ -25,10 +27,14 @@ python vinted_downloader.py --all-items "ITEM_URL"
 
 Then you get the following files:
 
-- `item.json`: all the information you want and you don't want
-- `item_summary`: main information (url, title, seller id, etc.)
-- `photo_01.jpg`: all the photos for the item
-- `seller.jpg`: seller photo
+- `item.json`: extracted item metadata; available fields depend on the source response.
+- `item_summary`: source URL, title, seller name and seller ID where available.
+- `photo_00.jpeg`, `photo_01.jpeg`, etc.: item photos, numbered from zero. Extensions follow the image URLs, so files may instead use `.webp` or another extension.
+- `seller.webp`: seller profile picture (when requested with `--seller`).
+
+With `--all-items`, each item's metadata, summary and photos are placed in a subdirectory named after its numeric ID.
+
+Unexpected extraction or JSON-decoding failures may save the server response to `vinted_product_downloader_error.txt` for diagnosis.
 
 Use the `--output` option to specify an output directory (default is current directory).  If it doesn't exist, it will be created. If you want to save the files in a subdirectory of the output directory automatically named after the item id and title, then use the `--save-in-dir` option.
 
@@ -38,9 +44,7 @@ For example, to automatically create and save in the `my-output/1234-item-title/
 python vinted_downloader.py --output my-output --save-in-dir "https://www.vinted.fr/items/1234-item-title"
 ```
 
-If the item is sold, then go to the url will redirect to the category, not the item, except if you are logged in. To avoid that, add `?noredirect=1` to the end of the url.
-
-If you have installed it with `pip`, you can also use the `vinted-downloader` command:
+If you have installed the package with `pip`, you can also use the `vinted-downloader` command:
 
 ```bash
 vinted-downloader "ITEM_URL"
@@ -48,11 +52,21 @@ vinted-downloader --seller "ITEM_URL"
 vinted-downloader --all-items "ITEM_URL"
 ```
 
+## Unavailable listings and errors
+
+A sold or otherwise inactive listing may still expose its item details and resized photos. The script attempts to find the same item in the seller's wardrobe to obtain full-size URLs. An item missing from that response does not by itself prove it was sold or that its image files were deleted; visibility can also differ between regional domains.
+
+For HTTP 404/410 responses to the item-page request, or Vinted's rendered `page-not-found` screen even with HTTP 200, the script prints an **Item unavailable** message and exits with status **1**, without a traceback or an error dump. Other HTTP errors on the item-page request and network errors that stop the download are reported separately with status 1. A failed wardrobe lookup falls back to the page photos. Successful completion returns status 0.
+
+When Vinted returns only its not-found page, there are no listing details or photo URLs to extract. Recovering them requires another source, such as an archived page or previously saved metadata/image URLs. A missing listing does not establish whether previously saved image URLs still work.
+
 ## Firefox extension
 
-Note that I developed a new Firefox extension to download the same data (except the seller json and profile picture), and, in addition, conversations with images. You can found it at the [Firefox add-ons store](https://addons.mozilla.org/en-US/firefox/addon/vinted-photo-data-downloader/), and the source code is available on [GitHub](https://github.com/boberle/vinted-downloader-firefox-addon).
+The upstream author also provides a separate [Firefox extension](https://addons.mozilla.org/en-US/firefox/addon/vinted-photo-data-downloader/), with [source code on GitHub](https://github.com/boberle/vinted-downloader-firefox-addon). Changes to this Python script do not update the extension.
 
 ## How to install?
+
+The PyPI package uses the version installed in your environment, which may differ from the source checkout. To run the code in this repository, follow the source installation instructions and use `python vinted_downloader.py`.
 
 ### With pip
 
@@ -147,88 +161,13 @@ python vinted_downloader.py "ITEM_URL"
 
 ## How does it work?
 
-All the item information is in a JSON file downloaded alongside the HTML file. The product id is found in the url of an item: `https://www.vinted.TLD/items/ITEM_ID-slug`.
+The client opens the Vinted home page to establish an anonymous session, then requests the item URL using the same session.
 
-Once you got the item id you just need to download the JSON file at `https://www.vinted.TLD/api/v2/items/ITEM_ID?localize=false`.
+It checks for unavailable pages and HTTP errors before extracting item details. Supported extraction methods include older embedded item data and current HTML, JSON-LD and Next.js Flight data.
 
-If you download it with curl, for example, you will get an "unauthorized" error. You need to connect first to an HTML page (eg the vinted home page, with the same TLD of the product page) to get the authentication cookies (even if it's an anonymous authentication) and then reuse them. This is why the bash script below uses 2 `curl` commands.
+When the page fallback supplies an item ID and seller ID, the script searches the seller's wardrobe at `/api/v2/wardrobe/SELLER_ID/items`, following pagination for up to ten pages. If the matching item supplies full-size photo URLs, those are preferred. Otherwise, the downloader uses the photo URLs available in the page data.
 
-The interesting parts of the JSON are the following ones (using `jq` format):
-
-```
-cat itemdetails.json | jq ".item.title"
-cat itemdetails.json | jq ".item.description"
-cat itemdetails.json | jq ".item.photos[] | .full_size_url"
-cat itemdetails.json | jq ".item.user.login"
-cat itemdetails.json | jq ".item.user.last_logged_on_ts"
-cat itemdetails.json | jq ".item.user.photo.full_size_url"
-```
-
-But you can find a lot more information in the json (the price, if the item is reserved, hidden, etc.), really everything that is displayed on the page, and even more.
-
-So, if you want to download the photos in the original size using only a bash script:
-
-```bash
-url=$1
-
-item_id=`echo "$url" | grep -oP "(?<=/)\d+(?=-)"`
-
-curl \
--H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
--H "Accept-Encoding: gzip, deflate, br" \
--H "Accept-Language: fr-FR,fr;q=0.5" \
--H "Connection: keep-alive" \
--H "Sec-Fetch-Dest: document" \
--H "Sec-Fetch-Mode: navigate" \
--H "Sec-Fetch-Site: cross-site" \
--H "TE: trailers" \
--H "Upgrade-Insecure-Requests: 1" \
--H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0" \
---cookie-jar "vinted_cookies.txt" \
---output vinted_home.out \
-"https://www.vinted.fr"
-
-curl \
--H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
--H "Accept-Encoding: gzip, deflate, br" \
--H "Accept-Language: fr-FR,fr;q=0.5" \
--H "Connection: keep-alive" \
--H "Sec-Fetch-Dest: document" \
--H "Sec-Fetch-Mode: navigate" \
--H "Sec-Fetch-Site: cross-site" \
--H "TE: trailers" \
--H "Upgrade-Insecure-Requests: 1" \
--H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0" \
---cookie "vinted_cookies.txt" \
---output vinted_item.out \
-"https://www.vinted.fr/api/v2/items/$item_id?localize=false"
-
-count=0
-for photo_url in `cat vinted_item.out | gzip -d | jq -r ".item.photos[] | .full_size_url"`
-do
-   curl \
-   -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8" \
-   -H "Accept-Encoding: gzip, deflate, br" \
-   -H "Accept-Language: fr-FR,fr;q=0.5" \
-   -H "Connection: keep-alive" \
-   -H "Sec-Fetch-Dest: document" \
-   -H "Sec-Fetch-Mode: navigate" \
-   -H "Sec-Fetch-Site: cross-site" \
-   -H "Upgrade-Insecure-Requests: 1" \
-   -H "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:109.0) Gecko/20100101 Firefox/118.0" \
-   --output "vinted_photo_$count.jpg" \
-   $photo_url
-   ((count++)) || true
-done
-```
-
-Just save it in a file `download_full_size_images.sh` and call it with:
-
-```bash
-bash -e -x download_full_size_images.sh URL_OF_THE_ITEM
-```
-
-(adapt the TLD in the script to the TLD of your item)
+Photo URLs are used with their supplied paths and query parameters intact. The script does not generate signatures or guess original-size URLs from thumbnail URLs.
 
 ## Version
 
