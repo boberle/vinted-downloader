@@ -6,6 +6,8 @@ import random
 import re
 import sys
 import time
+from html import unescape
+from html.parser import HTMLParser
 from abc import abstractmethod
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -17,6 +19,29 @@ import requests
 AUTHOR_EMAIL = "contact@boberle.com"
 ERROR_FILE = "vinted_product_downloader_error.txt"
 SNAP = [1, 2, 3]
+
+
+class ItemUnavailableError(RuntimeError):
+    """The requested listing is unavailable in this response."""
+
+
+class _NotFoundPageParser(HTMLParser):
+    """Recognize Vinted's rendered error page, not JS route references."""
+
+    found = False
+
+    def handle_starttag(
+        self, tag: str, attrs: list[tuple[str, str | None]]
+    ) -> None:
+        if ("data-testid", "page-not-found") in attrs:
+            self.found = True
+
+
+def is_not_found_page(html_content: str) -> bool:
+    parser = _NotFoundPageParser()
+    parser.feed(html_content)
+    parser.close()
+    return parser.found
 
 
 @dataclass
@@ -96,11 +121,15 @@ class Downloader:
             self.writer.write_text(Path("item.json"), json.dumps(details.data))
             self.writer.write_text(Path("item_summary"), str(summary))
 
+            photo_urls = details.full_size_photo_urls
             for i, photo_bytes in enumerate(
-                client.download_photos(*details.full_size_photo_urls)
+                client.download_photos(*photo_urls)
             ):
+                extension = (
+                    Path(urlparse(photo_urls[i]).path).suffix or ".webp"
+                )
                 self.writer.write_bytes(
-                    Path(f"photo_{i:02d}.webp"), photo_bytes
+                    Path(f"photo_{i:02d}{extension}"), photo_bytes
                 )
 
         if download_seller_profile and details.seller_photo_url:
@@ -146,7 +175,12 @@ class VintedClient(Client):
     def __post_init__(self) -> None:
         self.session = requests.Session()
         self.session.headers.update({
-            "User-Agent": "Mozilla/5.0",
+            "User-Agent": (
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/155.0.0.0 Safari/537.36"
+            ),
+            "Accept-Language": "en-US,en;q=0.9",
         })
         # Connect the first time to get the anonymous cookie auth
         self.session.get(f"https://www.vinted.{self.vinted_tld}") 
@@ -155,20 +189,114 @@ class VintedClient(Client):
         self._nap()
         print("downloading details from '%s'" % item_url)
         response = self.session.get(item_url)
+        if response.status_code in (404, 410):
+            raise ItemUnavailableError(
+                f"Item unavailable: Vinted returned HTTP {response.status_code} "
+                f"for {item_url}."
+            )
+        response.raise_for_status()
+        response_text = response.text
+        # Some error pages are served with HTTP 200. Detect the rendered
+        # marker rather than generic Next.js notFound strings, which can
+        # also be embedded in valid listing pages.
+        if is_not_found_page(response_text):
+            raise ItemUnavailableError(
+                "Item unavailable: Vinted returned its 'Page not found' page "
+                f"for {item_url}."
+            )
         try:
-            response_text = response.text
             data = extract_details_from_html_with_dto(response_text)
-            if data is None:
-                data = extract_details_from_html_with_full_size_url(
-                    response_text
-                )
-                if data is None:
-                    raise ValueError(
-                        "Unable to extract product details from the HTML"
-                    )
-                print("Found data with the 'full_size_url' method")
-            else:
+            if data is not None:
                 print("Found data with the 'itemDto' method")
+                return data
+            data = extract_details_from_html_with_full_size_url(
+                response_text
+            )
+            if data is not None:
+                print("Found data with the 'full_size_url' method")
+                return data
+            # Current Vinted pages no longer embed the item JSON at all:
+            # the page is rendered server-side and only carries resized
+            # (800px) photos, JSON-LD metadata and the seller's profile
+            # link. Build the item data from those, then try to upgrade
+            # the photos to full size through the seller's wardrobe API
+            # (the endpoint already used by --all-items).
+            try:
+                item_id: int | None = get_item_id(item_url)
+            except RuntimeError:
+                item_id = None
+            data = extract_details_from_html_page(response_text, item_id)
+            if data is None:
+                Path(ERROR_FILE).write_bytes(response.content)
+                raise ValueError(
+                    "Unable to extract product details from the HTML. "
+                    f"The server response has been saved in {ERROR_FILE}."
+                )
+            print(
+                "Found data with the 'page' method (%d photos)"
+                % len(data.get("photos", []))
+            )
+            if item_id is not None:
+                data["id"] = item_id
+            user = data.get("user")
+            seller_id = user.get("id") if isinstance(user, dict) else None
+            if item_id and seller_id:
+                full = self._find_item_in_wardrobe(seller_id, item_id)
+                if full is None and data.get("can_buy") is False:
+                    print(
+                        "This item is no longer for sale (sold, reserved or "
+                        "closed): sellers' wardrobes only list active items, "
+                        "so its full-size photos can't be fetched"
+                    )
+                if full is not None:
+                    for key, value in data.items():
+                        full.setdefault(key, value)
+                    # some listings carry a single "photo" (the cover)
+                    # instead of the "photos" list: graft its full-size
+                    # URL onto the matching page photo
+                    cover = full.get("photo")
+                    if isinstance(cover, dict) and cover.get("full_size_url"):
+                        for photo in full.get("photos", []):
+                            if isinstance(photo, dict) and (
+                                photo.get("url") == cover.get("url")
+                                or photo.get("id") == cover.get("id")
+                            ):
+                                photo.setdefault(
+                                    "full_size_url", cover["full_size_url"]
+                                )
+                    n_full = sum(
+                        1 for p in full.get("photos", [])
+                        if isinstance(p, dict) and p.get("full_size_url")
+                    )
+                    if n_full:
+                        print(
+                            "Upgraded: %d of %d photos have full-size URLs "
+                            "from the wardrobe"
+                            % (n_full, len(full.get("photos", [])))
+                        )
+                        return full
+                    print(
+                        "Wardrobe item found, but it carries no full-size "
+                        "URLs either"
+                    )
+                    data = full
+            dims = sorted(
+                {
+                    (int(p["width"]), int(p["height"]))
+                    for p in data.get("photos", [])
+                    if isinstance(p, dict)
+                    and p.get("width") and p.get("height")
+                }
+            )
+            size_note = (
+                " (the originals are %s)"
+                % ", ".join("%dx%d" % d for d in dims)
+                if dims else ""
+            )
+            print(
+                "Note: Vinted only serves the 800px rendition of the "
+                "photos to the web%s, downloading those" % size_note
+            )
             return data
         except json.JSONDecodeError:
             open(
@@ -185,6 +313,109 @@ class VintedClient(Client):
                 "========="
             )
             sys.exit(1)
+
+    def _find_item_in_wardrobe(
+        self, seller_id: int, item_id: int, max_pages: int = 10
+    ) -> dict[str, Any] | None:
+        url = (
+            f"https://www.vinted.{self.vinted_tld}"
+            f"/api/v2/wardrobe/{seller_id}/items"
+        )
+        headers = {
+            "Accept": "application/json, text/plain, */*",
+            "X-Requested-With": "XMLHttpRequest",
+            "Referer": (
+                f"https://www.vinted.{self.vinted_tld}/member/{seller_id}"
+            ),
+        }
+        seen_first_ids: set[str] = set()
+        seen_items = 0
+        try:
+            page = 1
+            while page <= max_pages:
+                if page > 1:
+                    self._nap()
+                params: dict[str, Any] = {
+                    "page": page,
+                    "per_page": 96,
+                    "order": "relevance",
+                }
+                response = self.session.get(
+                    url, headers=headers, params=params
+                )
+                if response.status_code != 200:
+                    print(
+                        "wardrobe request failed with status %d"
+                        % response.status_code
+                    )
+                    return None
+                try:
+                    data = response.json()
+                except ValueError:
+                    print(
+                        "wardrobe response is not JSON (content-type: %s)"
+                        % response.headers.get("Content-Type", "?")
+                    )
+                    return None
+                if not isinstance(data, dict):
+                    print("wardrobe response has an unexpected shape")
+                    return None
+                items = data.get("items") or []
+                pagination = data.get("pagination") or {}
+                print(
+                    "wardrobe page %d: %d items, pagination=%s, "
+                    "full_size_url present: %s"
+                    % (
+                        page,
+                        len(items),
+                        json.dumps(pagination, separators=(",", ":"))[:160],
+                        "full_size_url" in response.text,
+                    )
+                )
+                for entry in items:
+                    if not isinstance(entry, dict):
+                        continue
+                    candidate = entry
+                    if isinstance(entry.get("item"), dict):
+                        candidate = entry["item"]
+                    candidate_id = candidate.get("id", candidate.get("item_id"))
+                    if str(candidate_id) == str(item_id):
+                        return cast(dict[str, Any], candidate)
+                seen_items += len(items)
+                if not items:
+                    print(
+                        "wardrobe returned no items (keys: %s)"
+                        % ", ".join(sorted(data.keys()))[:120]
+                    )
+                    return None
+                # guard against an endpoint that ignores the page parameter
+                first = items[0] if isinstance(items[0], dict) else {}
+                first_id = str(first.get("id", first.get("item_id")))
+                if first_id in seen_first_ids:
+                    print("wardrobe pagination repeats, stopping")
+                    return None
+                seen_first_ids.add(first_id)
+                total_pages = pagination.get("total_pages")
+                if total_pages is None:
+                    total_entries = pagination.get("total_entries")
+                    per_page = pagination.get("per_page") or len(items)
+                    if total_entries and per_page:
+                        total_pages = -(-int(total_entries) // int(per_page))
+                if total_pages is not None and page >= int(total_pages):
+                    print(
+                        "item not found among the seller's %d wardrobe items"
+                        % seen_items
+                    )
+                    return None
+                page += 1
+        except requests.RequestException as exc:
+            print("wardrobe request failed: %s" % exc)
+            return None
+        print(
+            "item not found in the first %d wardrobe pages (%d items)"
+            % (max_pages, seen_items)
+        )
+        return None
 
     def download_items_details(self, profile_id: int) -> dict[str, Any]:
         self._nap()
@@ -339,8 +570,6 @@ def main() -> int:
     args = parse_args()
     item_url: str = args.item_url
     download_seller_profile: bool = args.seller
-    if download_seller_profile:
-        raise RuntimeError("--seller option is disabled for now")
     output_dir: Path = Path(args.output)
 
     if args.save_in_dir:
@@ -351,11 +580,15 @@ def main() -> int:
         client_factory=VintedClientFactory(),
         writer=FileWriter(output_dir=output_dir)
     )
-    downloader.download(
-        item_url=item_url,
-        download_seller_profile=download_seller_profile,
-        download_all_seller_items=args.all_items,
-    )
+    try:
+        downloader.download(
+            item_url=item_url,
+            download_seller_profile=download_seller_profile,
+            download_all_seller_items=args.all_items,
+        )
+    except (ItemUnavailableError, requests.RequestException) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     return 0
 
@@ -458,11 +691,243 @@ def extract_details_from_html_with_full_size_url(
     return None
 
 
+def iter_flight_json(html_content: str) -> Generator[Any, None, None]:
+    """Yield every JSON value embedded in the Next.js flight data.
+
+    The page streams React Server Components data as
+    ``self.__next_f.push([1, "<id>:<json>\\n<id>:<json>..."])`` script
+    tags. Each line of the pushed string is ``<hex id>:<json>``; lines
+    whose body isn't JSON (module references like ``I[...]``) are
+    skipped.
+    """
+    regex = r"<script\b[^>]*>self\.__next_f\.push\((.*?)\)</script>"
+    for match in re.finditer(regex, html_content, re.DOTALL):
+        try:
+            payload = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, list):
+            continue
+        for part in payload:
+            if not isinstance(part, str):
+                continue
+            for line in part.split("\n"):
+                body_match = re.match(r"^[0-9a-f]+:(.*)$", line)
+                if body_match is None:
+                    continue
+                body = body_match.group(1)
+                if not body or body[0] not in "[{":
+                    continue
+                try:
+                    yield json.loads(body)
+                except json.JSONDecodeError:
+                    continue
+
+
+def _find_photo_bearing_dicts(node: Any, found: list[dict[str, Any]]) -> None:
+    if isinstance(node, dict):
+        photos = node.get("photos")
+        if (
+            isinstance(photos, list)
+            and photos
+            and all(isinstance(p, dict) and "url" in p for p in photos)
+        ):
+            found.append(node)
+        for child in node.values():
+            _find_photo_bearing_dicts(child, found)
+    elif isinstance(node, list):
+        for child in node:
+            _find_photo_bearing_dicts(child, found)
+
+
+ITEM_FLAG_KEYS = (
+    "can_buy", "is_reserved", "is_closed", "is_hidden", "is_draft",
+    "status", "item_closing_action",
+)
+
+
+def _find_item_flags(node: Any, item_id: int, found: dict[str, Any]) -> None:
+    """Collect sale-state flags from any flight dict describing the item."""
+    if isinstance(node, dict):
+        node_id = node.get("id", node.get("item_id"))
+        if node_id is not None and str(node_id) == str(item_id):
+            for key in ITEM_FLAG_KEYS:
+                if key in node and not isinstance(node[key], (dict, list)):
+                    found.setdefault(key, node[key])
+        for child in node.values():
+            _find_item_flags(child, item_id, found)
+    elif isinstance(node, list):
+        for child in node:
+            _find_item_flags(child, item_id, found)
+
+
+def extract_item_from_flight_data(
+        html_content: str, item_id: int | None = None
+    ) -> dict[str, Any] | None:
+    """Find the item's photo list inside the flight data.
+
+    The page embeds the item with its photos in the classic API shape
+    (``{"id", "title", "price", "seller_id", "photos": [{"id", "url",
+    "width", "height", "is_main", "thumbnails": [...]}]}``), minus the
+    ``full_size_url`` field: ``url`` is the 800px rendition while
+    ``width``/``height`` describe the stored original. Several objects
+    carry the photos (the item itself, gallery plugins); they are
+    merged, item first. Objects belonging to other items (the seller's
+    other listings) are skipped when ``item_id`` is known.
+    """
+    candidates: list[dict[str, Any]] = []
+    flags: dict[str, Any] = {}
+    for value in iter_flight_json(html_content):
+        _find_photo_bearing_dicts(value, candidates)
+        if item_id is not None:
+            _find_item_flags(value, item_id, flags)
+
+    matching: list[dict[str, Any]] = []
+    for node in candidates:
+        node_id = node.get("id", node.get("item_id"))
+        if item_id is not None and node_id is not None:
+            if str(node_id) != str(item_id):
+                continue
+        matching.append(node)
+    if not matching:
+        return None
+
+    # the item object itself (has a title) wins over gallery plugins
+    matching.sort(key=lambda n: 0 if "title" in n else 1)
+    result: dict[str, Any] = {}
+    for node in matching:
+        for key, value in node.items():
+            result.setdefault(key, value)
+    for key, value in flags.items():
+        result.setdefault(key, value)
+    return result
+
+
+def extract_details_from_html_page(
+        html_content: str, item_id: int | None = None
+    ) -> dict[str, Any] | None:
+    """Build item data from the server-rendered item page.
+
+    Current Vinted pages don't embed the raw item JSON anymore. They do
+    contain: a JSON-LD Product block (title, description, price), the
+    item photos as <img data-testid="item-photo-N--img"> tags (800px
+    renditions), the seller's /member/<id> link, their username and
+    avatar. The flight data additionally carries the complete photo
+    list with the originals' dimensions. That is enough to rebuild an
+    item dict in the shape the rest of this script expects.
+    """
+    data: dict[str, Any] = {}
+
+    # --- JSON-LD Product block: title, description, price
+    for match in re.finditer(
+        r'<script type="application/ld\+json"[^>]*>(.*?)</script>',
+        html_content,
+        re.DOTALL,
+    ):
+        try:
+            ld = json.loads(match.group(1))
+        except json.JSONDecodeError:
+            continue
+        nodes = ld if isinstance(ld, list) else [ld]
+        for node in nodes:
+            if isinstance(node, dict) and node.get("@type") == "Product":
+                data["title"] = str(node.get("name", ""))
+                data["description"] = str(node.get("description", ""))
+                offers = node.get("offers")
+                if isinstance(offers, dict):
+                    data["price"] = {
+                        "amount": offers.get("price"),
+                        "currency_code": offers.get("priceCurrency"),
+                    }
+                break
+        if "title" in data:
+            break
+
+    # --- fallbacks from OpenGraph tags
+    if not data.get("title"):
+        og_title = re.search(
+            r'<meta property="og:title" content="([^"]*)"', html_content
+        )
+        if og_title:
+            data["title"] = re.sub(
+                r"\s*\|\s*Vinted\s*$", "", unescape(og_title.group(1))
+            )
+
+    # --- item photos, in page order, deduplicated (the page renders a
+    # mobile and a desktop gallery with the same images)
+    photos: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for match in re.finditer(r"<img\b[^>]*>", html_content):
+        tag = match.group(0)
+        if 'data-testid="item-photo-' not in tag:
+            continue
+        src = re.search(r'src="([^"]+)"', tag)
+        if src is None:
+            continue
+        url = unescape(src.group(1))
+        if url not in seen:
+            seen.add(url)
+            photos.append({"url": url})
+    if photos:
+        data["photos"] = photos
+
+    # --- seller: /member/<id> link, username, avatar
+    member = re.search(r'href="/member/(\d+)"', html_content)
+    if member:
+        user: dict[str, Any] = {"id": int(member.group(1))}
+        username = re.search(
+            r'data-testid="profile-username"[^>]*>([^<]+)<', html_content
+        )
+        if username:
+            user["login"] = unescape(username.group(1)).strip()
+        # the avatar is the first image inside the seller card, right
+        # after the /member/<id> link
+        region = html_content[member.start():member.start() + 2000]
+        avatar = re.search(r'<img[^>]*src="([^"]+)"', region)
+        if avatar:
+            user["photo"] = {"full_size_url": unescape(avatar.group(1))}
+        data["user"] = user
+
+    # --- flight data: the complete photo list (even when the gallery
+    # only renders the first few), plus id, price and seller id
+    flight = extract_item_from_flight_data(html_content, item_id)
+    if flight:
+        flight_photos = flight.get("photos")
+        if isinstance(flight_photos, list) and len(flight_photos) >= len(
+            photos
+        ):
+            data["photos"] = flight_photos
+        for key in ("title", "description", "price"):
+            if key in flight and not data.get(key):
+                data[key] = flight[key]
+        for key in ITEM_FLAG_KEYS:
+            if key in flight:
+                data.setdefault(key, flight[key])
+        if "id" in flight and not data.get("id"):
+            try:
+                data["id"] = int(flight["id"])
+            except (TypeError, ValueError):
+                pass
+        seller_id = flight.get("seller_id")
+        if seller_id is not None:
+            user = data.setdefault("user", {})
+            if not user.get("id"):
+                try:
+                    user["id"] = int(seller_id)
+                except (TypeError, ValueError):
+                    pass
+
+    if not data.get("title") and not data.get("photos"):
+        return None
+    data.setdefault("photos", [])
+    return data
+
+
 def get_item_id(item_url: str) -> int:
-    match = re.search(r"(?<=/)\d+(?=-)", item_url)
+    match = re.search(r"/items/(\d+)", item_url)
     if match is None:
         raise RuntimeError("Unable to find item_url")
-    item_id = int(match.group(0))
+    item_id = int(match.group(1))
     return item_id
 
 
