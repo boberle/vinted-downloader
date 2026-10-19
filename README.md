@@ -30,7 +30,7 @@ Then you get the following files:
 - `item.json`: extracted item metadata; available fields depend on the source response.
 - `item_summary`: source URL, title, seller name and seller ID where available.
 - `photo_00.jpeg`, `photo_01.jpeg`, etc.: item photos, numbered from zero. Extensions follow the image URLs, so files may instead use `.webp` or another extension.
-- `seller.webp`: seller profile picture (when requested with `--seller`).
+- `seller.webp`: seller profile picture (when requested with `--seller` and a photo URL is available). The filename is fixed; the downloaded bytes are not converted to WebP.
 
 With `--all-items`, each item's metadata, summary and photos are placed in a subdirectory named after its numeric ID.
 
@@ -51,6 +51,16 @@ vinted-downloader "ITEM_URL"
 vinted-downloader --seller "ITEM_URL"
 vinted-downloader --all-items "ITEM_URL"
 ```
+
+## Saved full-size URLs after a sale
+
+Full-size image URLs can continue to work after an item is sold, even when the listing page and wardrobe lookup no longer supply those URLs. [Issue #25](https://github.com/boberle/vinted-downloader/issues/25) reports examples using URLs previously recorded in [issue #20](https://github.com/boberle/vinted-downloader/issues/20); related extraction problems are discussed in [issue #21](https://github.com/boberle/vinted-downloader/issues/21).
+
+This distinguishes two separate questions: whether the script can retrieve a full-size URL from the current listing data, and whether an already known URL still downloads the image. Failure to retrieve the URL does not prove that the image was deleted. These examples do not establish how long the URLs remain valid, or guarantee availability for every sold or deleted listing.
+
+Download images and preserve the item's `item.json` while full-size URLs are available. When retrieved, those URLs are stored in the photo metadata, including their complete paths and query strings. `--save-in-dir` keeps each listing's files in its own directory, but rerunning the same listing can overwrite its metadata and photos: keep a backup of the earlier download.
+
+The script currently fetches fresh listing data; it does not read an existing `item.json` to recover older URLs or automatically retrieve them from archives. Previously saved full-size URLs can be downloaded separately as long as they still work. Changing a thumbnail URL's size or path is not a reliable way to reconstruct them.
 
 ## Unavailable listings and errors
 

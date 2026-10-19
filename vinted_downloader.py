@@ -244,9 +244,9 @@ class VintedClient(Client):
                 full = self._find_item_in_wardrobe(seller_id, item_id)
                 if full is None and data.get("can_buy") is False:
                     print(
-                        "This item is no longer for sale (sold, reserved or "
-                        "closed): sellers' wardrobes only list active items, "
-                        "so its full-size photos can't be fetched"
+                        "This item is not currently buyable, and the wardrobe "
+                        "lookup did not return it. Previously saved full-size "
+                        "URLs may still work."
                     )
                 if full is not None:
                     for key, value in data.items():
@@ -289,13 +289,14 @@ class VintedClient(Client):
                 }
             )
             size_note = (
-                " (the originals are %s)"
+                " (photo dimensions reported by Vinted: %s)"
                 % ", ".join("%dx%d" % d for d in dims)
                 if dims else ""
             )
             print(
-                "Note: Vinted only serves the 800px rendition of the "
-                "photos to the web%s, downloading those" % size_note
+                "No full-size URLs were retrieved; downloading the available "
+                "photo URLs, which may be resized%s. This does not mean the "
+                "full-size images have been deleted." % size_note
             )
             return data
         except json.JSONDecodeError:
