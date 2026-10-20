@@ -118,14 +118,14 @@ First you need to install Python:
    - Check "Add python.exe to PATH" (this is **VERY IMPORTANT**, see the image below)
    - Click "Install Now"
 
-![Add python.exe to PATH](./docs/img/screenshot_windows_install_python.png)
+![Add python.exe to PATH](https://raw.githubusercontent.com/boberle/vinted-downloader/master/docs/img/screenshot_windows_install_python.png)
 
 Then open the Command Prompt (type "prompt" in the search bar at the bottom of the screen):
 
 - type `python --version` to check that Python is correctly installed (you should see the version of Python, and not an error message)
 - type `pip install vinted-downloader`. This will install the downloader and its dependencies
 
-![pip install vinted-downloader](./docs/img/screenshot_windows_install_vinted_downloader.png)
+![pip install vinted-downloader](https://raw.githubusercontent.com/boberle/vinted-downloader/master/docs/img/screenshot_windows_install_vinted_downloader.png)
 
 Then use it, like described above. For example:
 
@@ -135,7 +135,7 @@ vinted-downloader --seller "ITEM_URL"
 vinted-downloader --all-items "ITEM_URL"
 ```
 
-![Run vinted-downloader](./docs/img/screenshot_windows_run_vinted_downloader.png)
+![Run vinted-downloader](https://raw.githubusercontent.com/boberle/vinted-downloader/master/docs/img/screenshot_windows_run_vinted_downloader.png)
 
 If the command `vinted-downloader` doesn't work, use:
 
