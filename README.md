@@ -173,7 +173,7 @@ python vinted_downloader.py "ITEM_URL"
 
 The client opens the Vinted home page to establish an anonymous session, then requests the item URL using the same session.
 
-It checks for unavailable pages and HTTP errors before extracting item details. Supported extraction methods include older embedded item data and current HTML, JSON-LD and Next.js Flight data.
+It checks for unavailable pages and HTTP errors before extracting item details. Supported extraction methods include older embedded item data and current HTML, JSON-LD and Next.js Flight data. Data found by the older methods is used directly only when its photos include `full_size_url` values; otherwise the script continues with the page extraction and the wardrobe lookup described below.
 
 When the page fallback supplies an item ID and seller ID, the script searches the seller's wardrobe at `/api/v2/wardrobe/SELLER_ID/items`, following pagination for up to ten pages. If the matching item supplies full-size photo URLs, those are preferred. Otherwise, the downloader uses the photo URLs available in the page data.
 
