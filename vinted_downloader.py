@@ -205,17 +205,30 @@ class VintedClient(Client):
                 f"for {item_url}."
             )
         try:
-            data = extract_details_from_html_with_dto(response_text)
-            if data is not None:
-                print("Found data with the 'itemDto' method")
-                return data
-            data = extract_details_from_html_with_full_size_url(
-                response_text
-            )
-            if data is not None:
-                print("Found data with the 'full_size_url' method")
-                return data
-            # Current Vinted pages no longer embed the item JSON at all:
+            # The older methods are only trusted when their photos carry
+            # full-size URLs. Current pages embed item-shaped dicts (title
+            # + photos) in the flight data whose photos only have the
+            # resized f800 "url": returning one of those here would skip
+            # the wardrobe lookup below, which supplies the full-size URLs.
+            fallback: dict[str, Any] | None = None
+            fallback_method = ""
+            for method, extract in (
+                ("itemDto", extract_details_from_html_with_dto),
+                ("full_size_url", extract_details_from_html_with_full_size_url),
+            ):
+                found = extract(response_text)
+                if found is None:
+                    continue
+                if has_full_size_photo_urls(found):
+                    print("Found data with the '%s' method" % method)
+                    return found
+                print(
+                    "The '%s' method found item data without full-size "
+                    "photo URLs" % method
+                )
+                if fallback is None:
+                    fallback, fallback_method = found, method
+            # Current Vinted pages no longer embed the full item JSON:
             # the page is rendered server-side and only carries resized
             # (800px) photos, JSON-LD metadata and the seller's profile
             # link. Build the item data from those, then try to upgrade
@@ -226,20 +239,27 @@ class VintedClient(Client):
             except RuntimeError:
                 item_id = None
             data = extract_details_from_html_page(response_text, item_id)
-            if data is None:
+            if data is not None:
+                print(
+                    "Found data with the 'page' method (%d photos)"
+                    % len(data.get("photos", []))
+                )
+            elif fallback is not None:
+                print(
+                    "Using the data found with the '%s' method"
+                    % fallback_method
+                )
+                data = fallback
+            else:
                 Path(ERROR_FILE).write_bytes(response.content)
                 raise ValueError(
                     "Unable to extract product details from the HTML. "
                     f"The server response has been saved in {ERROR_FILE}."
                 )
-            print(
-                "Found data with the 'page' method (%d photos)"
-                % len(data.get("photos", []))
-            )
             if item_id is not None:
                 data["id"] = item_id
-            user = data.get("user")
-            seller_id = user.get("id") if isinstance(user, dict) else None
+            # user.id (page method) or seller_id (flight data dicts)
+            seller_id = Details(data).seller_id
             if item_id and seller_id:
                 full = self._find_item_in_wardrobe(seller_id, item_id)
                 if full is None and data.get("can_buy") is False:
@@ -522,6 +542,15 @@ def get_photo_url(photo: dict[str, Any]) -> str:
     # Older payloads: full_size_url.
     # Newer Next.js payloads only expose url (the largest available size).
     return str(photo.get("full_size_url") or photo["url"])
+
+
+def has_full_size_photo_urls(data: dict[str, Any]) -> bool:
+    """Whether any of the item's photos carries a full_size_url."""
+    photos = data.get("photos")
+    return isinstance(photos, list) and any(
+        isinstance(photo, dict) and photo.get("full_size_url")
+        for photo in photos
+    )
 
 
 @dataclass
