@@ -171,6 +171,8 @@ class Client(Protocol):
 class VintedClient(Client):
     vinted_tld: str
     nap: list[int] | None = field(default_factory=lambda: SNAP)
+    # wardrobe pages searched for full-size URLs; 0 means no limit
+    max_wardrobe_pages: int = 10
 
     def __post_init__(self) -> None:
         self.session = requests.Session()
@@ -261,7 +263,9 @@ class VintedClient(Client):
             # user.id (page method) or seller_id (flight data dicts)
             seller_id = Details(data).seller_id
             if item_id and seller_id:
-                full = self._find_item_in_wardrobe(seller_id, item_id)
+                full = self._find_item_in_wardrobe(
+                    seller_id, item_id, self.max_wardrobe_pages
+                )
                 if full is None and data.get("can_buy") is False:
                     print(
                         "This item is not currently buyable, and the wardrobe "
@@ -353,7 +357,9 @@ class VintedClient(Client):
         seen_items = 0
         try:
             page = 1
-            while page <= max_pages:
+            # max_pages <= 0: no limit. The loop still ends on the last
+            # page, an empty page or a repeated page (guards below).
+            while max_pages <= 0 or page <= max_pages:
                 if page > 1:
                     self._nap()
                 params: dict[str, Any] = {
@@ -433,7 +439,8 @@ class VintedClient(Client):
             print("wardrobe request failed: %s" % exc)
             return None
         print(
-            "item not found in the first %d wardrobe pages (%d items)"
+            "item not found in the first %d wardrobe pages (%d items); "
+            "use --max-wardrobe-pages to search more pages"
             % (max_pages, seen_items)
         )
         return None
@@ -501,9 +508,15 @@ class ClientFactory(Protocol):
         ...
 
 
+@dataclass
 class VintedClientFactory(ClientFactory):
+    max_wardrobe_pages: int = 10
+
     def build(self, vinted_tld: str) -> VintedClient:
-        return VintedClient(vinted_tld=vinted_tld)
+        return VintedClient(
+            vinted_tld=vinted_tld,
+            max_wardrobe_pages=self.max_wardrobe_pages,
+        )
 
 
 class Writer(Protocol):
@@ -607,7 +620,9 @@ def main() -> int:
         output_dir /= subdir_name
 
     downloader = Downloader(
-        client_factory=VintedClientFactory(),
+        client_factory=VintedClientFactory(
+            max_wardrobe_pages=args.max_wardrobe_pages
+        ),
         writer=FileWriter(output_dir=output_dir)
     )
     try:
@@ -999,7 +1014,20 @@ def parse_args() -> argparse.Namespace:
         )
     )
 
+    parser.add_argument(
+        "--max-wardrobe-pages",
+        type=int,
+        default=10,
+        metavar="N",
+        help=(
+            "Number of seller wardrobe pages (96 items each) to search for "
+            "the item's full-size photo URLs; 0 means no limit (default: 10)"
+        )
+    )
+
     args = parser.parse_args()
+    if args.max_wardrobe_pages < 0:
+        parser.error("--max-wardrobe-pages must be 0 or a positive number")
 
     return args
 
