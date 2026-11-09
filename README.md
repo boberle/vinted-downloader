@@ -23,6 +23,9 @@ python vinted_downloader.py --seller "ITEM_URL"
 
 # Download all items available on the seller profile
 python vinted_downloader.py --all-items "ITEM_URL"
+
+# Search the seller's whole wardrobe for full-size photos (default: first 10 pages)
+python vinted_downloader.py --max-wardrobe-pages 0 "ITEM_URL"
 ```
 
 Then you get the following files:
@@ -173,9 +176,9 @@ python vinted_downloader.py "ITEM_URL"
 
 The client opens the Vinted home page to establish an anonymous session, then requests the item URL using the same session.
 
-It checks for unavailable pages and HTTP errors before extracting item details. Supported extraction methods include older embedded item data and current HTML, JSON-LD and Next.js Flight data.
+It checks for unavailable pages and HTTP errors before extracting item details. Supported extraction methods include older embedded item data and current HTML, JSON-LD and Next.js Flight data. Data found by the older methods is used directly only when its photos include `full_size_url` values; otherwise the script continues with the page extraction and the wardrobe lookup described below.
 
-When the page fallback supplies an item ID and seller ID, the script searches the seller's wardrobe at `/api/v2/wardrobe/SELLER_ID/items`, following pagination for up to ten pages. If the matching item supplies full-size photo URLs, those are preferred. Otherwise, the downloader uses the photo URLs available in the page data.
+When the page fallback supplies an item ID and seller ID, the script searches the seller's wardrobe at `/api/v2/wardrobe/SELLER_ID/items`, following pagination for up to ten pages (96 items each) by default. Use `--max-wardrobe-pages N` to search more pages, or `--max-wardrobe-pages 0` to search the whole wardrobe; the search still stops at the last page. If the matching item supplies full-size photo URLs, those are preferred. Otherwise, the downloader uses the photo URLs available in the page data.
 
 Photo URLs are used with their supplied paths and query parameters intact. The script does not generate signatures or guess original-size URLs from thumbnail URLs.
 
